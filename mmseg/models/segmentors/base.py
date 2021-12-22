@@ -10,6 +10,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from mmcv.runner import auto_fp16
 
+import pdb
 
 class BaseSegmentor(nn.Module):
     """Base class for segmentors."""
