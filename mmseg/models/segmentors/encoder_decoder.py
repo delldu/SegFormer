@@ -8,6 +8,7 @@ from .. import builder
 from ..builder import SEGMENTORS
 from .base import BaseSegmentor
 
+import pdb
 
 @SEGMENTORS.register_module()
 class EncoderDecoder(BaseSegmentor):
@@ -27,10 +28,42 @@ class EncoderDecoder(BaseSegmentor):
                  test_cfg=None,
                  pretrained=None):
         super(EncoderDecoder, self).__init__()
+         # backbone -- {'type': 'mit_b2', 'style': 'pytorch'}
         self.backbone = builder.build_backbone(backbone)
+        # neck is not None -- False
         if neck is not None:
             self.neck = builder.build_neck(neck)
+        
+
         self._init_decode_head(decode_head)
+        # self.decode_head
+        # SegFormerHead(
+        #   input_transform=multiple_select, ignore_index=255, align_corners=False
+        #   (loss_decode): CrossEntropyLoss()
+        #   (conv_seg): Conv2d(128, 150, kernel_size=(1, 1), stride=(1, 1))
+        #   (dropout): Dropout2d(p=0.1, inplace=False)
+        #   (linear_c4): MLP(
+        #     (proj): Linear(in_features=512, out_features=768, bias=True)
+        #   )
+        #   (linear_c3): MLP(
+        #     (proj): Linear(in_features=320, out_features=768, bias=True)
+        #   )
+        #   (linear_c2): MLP(
+        #     (proj): Linear(in_features=128, out_features=768, bias=True)
+        #   )
+        #   (linear_c1): MLP(
+        #     (proj): Linear(in_features=64, out_features=768, bias=True)
+        #   )
+        #   (linear_fuse): ConvModule(
+        #     (conv): Conv2d(3072, 768, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        #     (bn): SyncBatchNorm(768, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        #     (activate): ReLU(inplace=True)
+        #   )
+        #   (linear_pred): Conv2d(768, 150, kernel_size=(1, 1), stride=(1, 1))
+        # )
+
+
+        # pp auxiliary_head -- None
         self._init_auxiliary_head(auxiliary_head)
 
         self.train_cfg = train_cfg
@@ -40,14 +73,27 @@ class EncoderDecoder(BaseSegmentor):
 
         assert self.with_decode_head
 
+
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
         self.decode_head = builder.build_head(decode_head)
         self.align_corners = self.decode_head.align_corners
+        # self.align_corners -- False
         self.num_classes = self.decode_head.num_classes
+        # decode_head = {'type': 'SegFormerHead', 
+        #     'in_channels': [64, 128, 320, 512], 
+        #     'in_index': [0, 1, 2, 3], 
+        #     'feature_strides': [4, 8, 16, 32], 
+        #     'channels': 128, 'dropout_ratio': 0.1, 
+        #     'num_classes': 150, 'norm_cfg': {'type': 'SyncBN', 'requires_grad': True}, 
+        #     'align_corners': False, 
+        #     'decoder_params': {'embed_dim': 768}, 
+        #     'loss_decode': {'type': 'CrossEntropyLoss', 
+        #     'use_sigmoid': False, 'loss_weight': 1.0}}
 
     def _init_auxiliary_head(self, auxiliary_head):
         """Initialize ``auxiliary_head``"""
+        # auxiliary_head is not None -- False
         if auxiliary_head is not None:
             if isinstance(auxiliary_head, list):
                 self.auxiliary_head = nn.ModuleList()
@@ -79,6 +125,8 @@ class EncoderDecoder(BaseSegmentor):
         x = self.backbone(img)
         if self.with_neck:
             x = self.neck(x)
+        # pdb.set_trace() ==> here !!!
+
         return x
 
     def encode_decode(self, img, img_metas):
@@ -91,11 +139,16 @@ class EncoderDecoder(BaseSegmentor):
             size=img.shape[2:],
             mode='bilinear',
             align_corners=self.align_corners)
+
+        # pdb.set_trace() ==> here !!!
+
         return out
 
     def _decode_head_forward_train(self, x, img_metas, gt_semantic_seg):
         """Run forward function and calculate loss for decode head in
         training."""
+        pdb.set_trace()
+
         losses = dict()
         loss_decode = self.decode_head.forward_train(x, img_metas,
                                                      gt_semantic_seg,
@@ -130,6 +183,8 @@ class EncoderDecoder(BaseSegmentor):
     def forward_dummy(self, img):
         """Dummy forward function."""
         seg_logit = self.encode_decode(img, None)
+
+        pdb.set_trace()
 
         return seg_logit
 
@@ -167,6 +222,8 @@ class EncoderDecoder(BaseSegmentor):
 
     # TODO refactor
     def slide_inference(self, img, img_meta, rescale):
+        pdb.set_trace()
+
         """Inference by sliding-window with overlap.
 
         If h_crop > h_img or w_crop > w_img, the small patch will be used to
@@ -213,6 +270,7 @@ class EncoderDecoder(BaseSegmentor):
 
     def whole_inference(self, img, img_meta, rescale):
         """Inference with full image."""
+        # pdb.set_trace() ==> here !!!
 
         seg_logit = self.encode_decode(img, img_meta)
         if rescale:
@@ -240,7 +298,7 @@ class EncoderDecoder(BaseSegmentor):
         Returns:
             Tensor: The output segmentation map.
         """
-
+        # ==> pdb.set_trace()
         assert self.test_cfg.mode in ['slide', 'whole']
         ori_shape = img_meta[0]['ori_shape']
         assert all(_['ori_shape'] == ori_shape for _ in img_meta)
@@ -262,6 +320,8 @@ class EncoderDecoder(BaseSegmentor):
 
     def simple_test(self, img, img_meta, rescale=True):
         """Simple test with single image."""
+        # pdb.set_trace() ==>
+
         seg_logit = self.inference(img, img_meta, rescale)
         seg_pred = seg_logit.argmax(dim=1)
         if torch.onnx.is_in_onnx_export():
@@ -279,6 +339,8 @@ class EncoderDecoder(BaseSegmentor):
         Only rescale=True is supported.
         """
         # aug_test rescale all imgs back to ori_shape for now
+        pdb.set_trace()
+
         assert rescale
         # to save memory, we get augmented seg logit inplace
         seg_logit = self.inference(imgs[0], img_metas[0], rescale)
@@ -290,4 +352,5 @@ class EncoderDecoder(BaseSegmentor):
         seg_pred = seg_pred.cpu().numpy()
         # unravel batch dim
         seg_pred = list(seg_pred)
+
         return seg_pred

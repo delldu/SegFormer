@@ -5,6 +5,7 @@ from numpy import random
 
 from ..builder import PIPELINES
 from IPython import embed
+import pdb
 
 @PIPELINES.register_module()
 class AlignedResize(object):
@@ -164,10 +165,20 @@ class AlignedResize(object):
     def _resize_img(self, results):
         """Resize images with ``results['scale']``."""
         if self.keep_ratio:
+            # (Pdb) results['img'].shape, results['scale']
+            #  -- ((960, 1280, 3), (2048, 512))
+            # self.size_divisor -- 32
+
             img, scale_factor = mmcv.imrescale(
                 results['img'], results['scale'], return_scale=True)
+            # img.shape -- (512, 683, 3)
+            # scale_factor -- 0.5333333333333333 = 512/960
+
             #### align ####
             img = self._align(img, self.size_divisor)
+            # 683/32 == 21.34375, 22 * 32 = 704
+            # img.shape -- (512, 704, 3)
+
             # the w_scale and h_scale has minor difference
             # a real fix should be done in the mmcv.imrescale in the future
             new_h, new_w = img.shape[:2]
@@ -192,6 +203,11 @@ class AlignedResize(object):
 
     def _resize_seg(self, results):
         """Resize semantic segmentation map with ``results['scale']``."""
+        # print("results.get('seg_fields', []) --- ", results.get('seg_fields', []))
+        # print("self.keep_ratio --- ", self.keep_ratio)
+        # results.get('seg_fields', []) ---  []
+        # self.keep_ratio ---  True
+
         for key in results.get('seg_fields', []):
             if self.keep_ratio:
                 gt_seg = mmcv.imrescale(
@@ -217,7 +233,7 @@ class AlignedResize(object):
             dict: Resized results, 'img_shape', 'pad_shape', 'scale_factor',
                 'keep_ratio' keys are added into result dict.
         """
-
+        # 'scale' not in results -- False
         if 'scale' not in results:
             self._random_scale(results)
         self._resize_img(results)

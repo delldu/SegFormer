@@ -6,6 +6,7 @@ from .. import builder
 from ..builder import SEGMENTORS
 from .encoder_decoder import EncoderDecoder
 
+import pdb
 
 @SEGMENTORS.register_module()
 class CascadeEncoderDecoder(EncoderDecoder):
@@ -35,6 +36,8 @@ class CascadeEncoderDecoder(EncoderDecoder):
             test_cfg=test_cfg,
             pretrained=pretrained)
 
+        pdb.set_trace()
+
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
         assert isinstance(decode_head, list)
@@ -44,6 +47,8 @@ class CascadeEncoderDecoder(EncoderDecoder):
             self.decode_head.append(builder.build_head(decode_head[i]))
         self.align_corners = self.decode_head[-1].align_corners
         self.num_classes = self.decode_head[-1].num_classes
+
+        pdb.set_trace()
 
     def init_weights(self, pretrained=None):
         """Initialize the weights in backbone and heads.
@@ -75,6 +80,9 @@ class CascadeEncoderDecoder(EncoderDecoder):
             size=img.shape[2:],
             mode='bilinear',
             align_corners=self.align_corners)
+
+        pdb.set_trace()
+
         return out
 
     def _decode_head_forward_train(self, x, img_metas, gt_semantic_seg):
