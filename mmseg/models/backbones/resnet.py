@@ -9,6 +9,7 @@ from mmseg.utils import get_root_logger
 from ..builder import BACKBONES
 from ..utils import ResLayer
 
+import pdb
 
 class BasicBlock(nn.Module):
     """Basic block for ResNet."""
@@ -53,6 +54,8 @@ class BasicBlock(nn.Module):
         self.stride = stride
         self.dilation = dilation
         self.with_cp = with_cp
+
+        pdb.set_trace()
 
     @property
     def norm1(self):

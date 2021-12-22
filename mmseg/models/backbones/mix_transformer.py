@@ -8,14 +8,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from functools import partial
 
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from timm.models.layers import DropPath, trunc_normal_
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg
 from mmseg.models.builder import BACKBONES
 from mmseg.utils import get_root_logger
 from mmcv.runner import load_checkpoint
 import math
-
+import pdb
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -29,6 +29,8 @@ class Mlp(nn.Module):
         self.drop = nn.Dropout(drop)
 
         self.apply(self._init_weights)
+
+        # pdb.set_trace()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -72,6 +74,11 @@ class Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         self.sr_ratio = sr_ratio
+        # print("Attention: sr_ratio: ", sr_ratio)
+        # Attention: sr_ratio:  8
+        # Attention: sr_ratio:  4
+        # Attention: sr_ratio:  2
+        # Attention: sr_ratio:  1
         if sr_ratio > 1:
             self.sr = nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio)
             self.norm = nn.LayerNorm(dim)
@@ -94,6 +101,7 @@ class Attention(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x, H, W):
+        # print("Attention: forward-input: x:", x.size(), "H:", H, "W:", W)
         B, N, C = x.shape
         q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
 
@@ -114,11 +122,17 @@ class Attention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
 
+        # print("Attention: forward-output: x:", x.size())
+        # Attention: forward-input: x: torch.Size([1, 16384, 64]) H: 128 W: 128
+        # Attention: forward-output: x: torch.Size([1, 16384, 64])
+        # Attention: forward-input: x: torch.Size([1, 4096, 128]) H: 64 W: 64
+        # Attention: forward-output: x: torch.Size([1, 4096, 128])
+        # Attention: forward-input: x: torch.Size([1, 1024, 320]) H: 32 W: 32
+        # Attention: forward-output: x: torch.Size([1, 1024, 320])
+        # Attention: forward-input: x: torch.Size([1, 256, 512]) H: 16 W: 16
         return x
 
-
 class Block(nn.Module):
-
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, sr_ratio=1):
         super().__init__()
@@ -163,8 +177,8 @@ class OverlapPatchEmbed(nn.Module):
 
     def __init__(self, img_size=224, patch_size=7, stride=4, in_chans=3, embed_dim=768):
         super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
 
         self.img_size = img_size
         self.patch_size = patch_size
@@ -175,6 +189,11 @@ class OverlapPatchEmbed(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         self.apply(self._init_weights)
+        # print("OverlapPatchEmbed:img_size, patch_size -- ", img_size, patch_size)
+        # OverlapPatchEmbed:img_size, patch_size --  (224, 224) (7, 7)
+        # OverlapPatchEmbed:img_size, patch_size --  (56, 56) (3, 3)
+        # OverlapPatchEmbed:img_size, patch_size --  (28, 28) (3, 3)
+        # OverlapPatchEmbed:img_size, patch_size --  (14, 14) (3, 3)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -310,7 +329,8 @@ class MixVisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x):
+    def forward(self, x):
+        # x = self.forward_features(x)
         B = x.shape[0]
         outs = []
 
@@ -348,8 +368,7 @@ class MixVisionTransformer(nn.Module):
 
         return outs
 
-    def forward(self, x):
-        x = self.forward_features(x)
+
         # x = self.head(x)
 
         return x
@@ -395,7 +414,7 @@ class mit_b2(MixVisionTransformer):
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 4, 6, 3], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
-
+        # pdb.set_trace()
 
 @BACKBONES.register_module()
 class mit_b3(MixVisionTransformer):

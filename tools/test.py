@@ -11,6 +11,7 @@ from mmseg.apis import multi_gpu_test, single_gpu_test
 from mmseg.datasets import build_dataloader, build_dataset
 from mmseg.models import build_segmentor
 from IPython import embed
+import pdb
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -138,6 +139,7 @@ def main():
     if args.eval_options is not None:
         efficient_test = args.eval_options.get('efficient_test', False)
 
+    pdb.set_trace()
     if not distributed:
         model = MMDataParallel(model, device_ids=[0])
         outputs = single_gpu_test(model, data_loader, args.show, args.show_dir,
@@ -156,6 +158,8 @@ def main():
             print(f'\nwriting results to {args.out}')
             mmcv.dump(outputs, args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
+        pdb.set_trace()
+        
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
         if args.eval:

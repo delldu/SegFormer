@@ -11,6 +11,7 @@ from mmcv.image import tensor2imgs
 from mmcv.runner import get_dist_info
 from IPython import embed
 from mmseg.ops import resize
+import pdb
 
 def np2tmp(array, temp_file_name=None):
     """Save ndarray to local numpy file.
@@ -57,6 +58,8 @@ def single_gpu_test(model,
     dataset = data_loader.dataset
     prog_bar = mmcv.ProgressBar(len(dataset))
     for i, data in enumerate(data_loader):
+        pdb.set_trace()
+
         with torch.no_grad():
             result = model(return_loss=False, **data)
 
