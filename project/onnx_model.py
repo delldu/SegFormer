@@ -1,4 +1,4 @@
-"""Onnx Model Tools."""# coding=utf-8
+"""Onnx Model Tools."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -30,6 +30,7 @@ from PIL import Image
 #
 from model import get_model
 
+
 def onnx_load(onnx_file):
     session_options = onnxruntime.SessionOptions()
     # session_options.log_severity_level = 0
@@ -39,8 +40,12 @@ def onnx_load(onnx_file):
 
     onnx_model = onnxruntime.InferenceSession(onnx_file, session_options)
     # onnx_model.set_providers(['CUDAExecutionProvider'])
-    print("Onnx Model Engine: ", onnx_model.get_providers(),
-          "Device: ", onnxruntime.get_device())
+    print(
+        "Onnx Model Engine: ",
+        onnx_model.get_providers(),
+        "Device: ",
+        onnxruntime.get_device(),
+    )
 
     return onnx_model
 
@@ -54,14 +59,14 @@ def onnx_forward(onnx_model, input):
     return torch.from_numpy(onnxruntime_outputs[0])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """Onnx tools ..."""
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-e', '--export', help="export onnx model", action='store_true')
-    parser.add_argument('-v', '--verify', help="verify onnx model", action='store_true')
-    parser.add_argument('-p', '--predict', help="predict with onnx model", action='store_true')
-    parser.add_argument('-o', '--output', type=str, default="output", help="output folder")
+    parser.add_argument("-e", "--export", help="export onnx model", action="store_true")
+    parser.add_argument("-v", "--verify", help="verify onnx model", action="store_true")
+    parser.add_argument("-p", "--predict", help="predict with onnx model", action="store_true")
+    parser.add_argument("-o", "--output", type=str, default="output", help="output folder")
 
     args = parser.parse_args()
 
@@ -94,13 +99,17 @@ if __name__ == '__main__':
         output_names = ["output"]
         # dynamic_axes = {'input': {0: "batch"},'output': {0: "batch"}}
 
-        torch.onnx.export(torch_model, dummy_input, onnx_file_name,
-                          input_names=input_names,
-                          output_names=output_names,
-                          verbose=True,
-                          opset_version=11,
-                          keep_initializers_as_inputs=False,
-                          export_params=True)
+        torch.onnx.export(
+            torch_model,
+            dummy_input,
+            onnx_file_name,
+            input_names=input_names,
+            output_names=output_names,
+            verbose=True,
+            opset_version=11,
+            keep_initializers_as_inputs=False,
+            export_params=True,
+        )
 
         # 3. Optimize model
         # print('Checking model ...')

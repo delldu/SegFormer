@@ -1,4 +1,4 @@
-"""Create model."""# coding=utf-8
+"""Create model."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -17,7 +17,7 @@ import sys
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-
+from model_helper import SegmentModel
 
 def model_load(model, path):
     """Load model."""
@@ -54,7 +54,7 @@ def get_model(checkpoint):
 
 
 def model_device():
-    """Please call after model_setenv. """
+    """Please call after model_setenv."""
 
     return torch.device(os.environ["DEVICE"])
 
@@ -64,14 +64,15 @@ def model_setenv():
 
     # random init ...
     import random
+
     random.seed(42)
     torch.manual_seed(42)
 
     # Set default device to avoid exceptions
     if os.environ.get("DEVICE") != "cuda" and os.environ.get("DEVICE") != "cpu":
-        os.environ["DEVICE"] = 'cuda' if torch.cuda.is_available() else 'cpu'
+        os.environ["DEVICE"] = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if os.environ["DEVICE"] == 'cuda':
+    if os.environ["DEVICE"] == "cuda":
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
 
@@ -80,19 +81,3 @@ def model_setenv():
     print("  PWD: ", os.environ["PWD"])
     print("  DEVICE: ", os.environ["DEVICE"])
 
-
-
-
-
-
-class SegmentModel(nn.Module):
-    """segment Model."""
-
-    def __init__(self):
-        """Init model."""
-        super(SegmentModel, self).__init__()
-
-    def forward(self, x):
-        """Forward."""
-
-        return x
