@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--checkpoint", type=str, default="models/image_segment_b2.pth", help="checkpint file")
-    parser.add_argument("--input", type=str, required=True, help="input image")
+    parser.add_argument("--input", type=str, default="images/*.png", help="input image")
     parser.add_argument("--output", type=str, default="output", help="output folder")
 
     args = parser.parse_args()
@@ -72,6 +72,7 @@ if __name__ == "__main__":
         image = Image.open(filename).convert("RGB")
         image_tensor = to_tensor(image)
 
+        # limition: input_tensor hxw must be divided by 32
         input_tensor = norm_tensor(image_tensor).unsqueeze(0).to(device)
         with torch.no_grad():
             output_tensor = model(input_tensor)
