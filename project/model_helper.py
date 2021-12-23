@@ -40,6 +40,7 @@ def resize(input,
                         f'out size {(output_h, output_w)} is `nx+1`')
     if isinstance(size, torch.Size):
         size = tuple(int(x) for x in size)
+
     return F.interpolate(input, size, scale_factor, mode, align_corners)
 
 
@@ -456,7 +457,10 @@ def build_norm_layer(cfg, num_features):
     layer_type = cfg_.pop("type")
     # layer_type -- 'SyncBN'
 
-    norm_layer = nn.SyncBatchNorm
+    if layer_type == "SyncBN":
+        norm_layer = nn.SyncBatchNorm
+    else:
+        norm_layer = nn.BatchNorm2d
     requires_grad = cfg_.pop("requires_grad", True)
     cfg_.setdefault("eps", 1e-5)
 
@@ -540,6 +544,7 @@ class SegFormerHead(nn.Module):
             out_channels=embedding_dim,
             kernel_size=1,
             norm_cfg=dict(type="SyncBN", requires_grad=True),
+            # norm_cfg=dict(type="SyncBN", requires_grad=True),
         )
 
         self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
@@ -566,6 +571,7 @@ class SegFormerHead(nn.Module):
         ############## MLP decoder on C1-C4 ###########
         n, _, h, w = c4.shape
 
+
         _c4 = self.linear_c4(c4).permute(0, 2, 1).reshape(n, -1, c4.shape[2], c4.shape[3])
         _c4 = resize(_c4, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
@@ -578,8 +584,8 @@ class SegFormerHead(nn.Module):
         _c1 = self.linear_c1(c1).permute(0, 2, 1).reshape(n, -1, c1.shape[2], c1.shape[3])
 
         _c = self.linear_fuse(torch.cat([_c4, _c3, _c2, _c1], dim=1))
-
         x = self.dropout(_c)
+
         x = self.linear_pred(x)
 
         return x
@@ -598,7 +604,6 @@ class SegmentModel(nn.Module):
 
     def forward(self, x):
         x = self.backbone(x)
-
         seg_logit = self.decode_head(x)
         seg_logit =  F.softmax(seg_logit, dim=1)
         return seg_logit.argmax(dim=1).unsqueeze(0)
@@ -608,10 +613,11 @@ if __name__ == "__main__":
     model = SegmentModel()
     print(model)
 
-    model = model.cuda()
+    # model = model.cuda()
     model.eval()
 
-    input = torch.randn(1, 3, 512, 512).cuda()
+    # input = torch.randn(1, 3, 512, 512).cuda()
+    input = torch.randn(1, 3, 512, 512)
 
     with torch.no_grad():
         output = model(input)
