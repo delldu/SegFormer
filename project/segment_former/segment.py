@@ -19,25 +19,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def resize(input,
-           size=None,
-           scale_factor=None,
-           mode='nearest',
-           align_corners=None,
-           warning=True):
+
+def resize(input, size=None, scale_factor=None, mode="nearest", align_corners=None, warning=True):
     if warning:
         if size is not None and align_corners:
             input_h, input_w = tuple(int(x) for x in input.shape[2:])
             output_h, output_w = tuple(int(x) for x in size)
             if output_h > input_h or output_w > output_h:
-                if ((output_h > 1 and output_w > 1 and input_h > 1
-                     and input_w > 1) and (output_h - 1) % (input_h - 1)
-                        and (output_w - 1) % (input_w - 1)):
+                if (
+                    (output_h > 1 and output_w > 1 and input_h > 1 and input_w > 1)
+                    and (output_h - 1) % (input_h - 1)
+                    and (output_w - 1) % (input_w - 1)
+                ):
                     warnings.warn(
-                        f'When align_corners={align_corners}, '
-                        'the output would more aligned if '
-                        f'input size {(input_h, input_w)} is `x+1` and '
-                        f'out size {(output_h, output_w)} is `nx+1`')
+                        f"When align_corners={align_corners}, "
+                        "the output would more aligned if "
+                        f"input size {(input_h, input_w)} is `x+1` and "
+                        f"out size {(output_h, output_w)} is `nx+1`"
+                    )
     if isinstance(size, torch.Size):
         size = tuple(int(x) for x in size)
 
@@ -196,7 +195,7 @@ class VisionTransformer(nn.Module):
         norm_layer=nn.LayerNorm,
         depths=[3, 4, 6, 3],
         sr_ratios=[8, 4, 2, 1],
-        embedding_dim = 768
+        embedding_dim=768,
     ):
         super().__init__()
 
@@ -370,7 +369,7 @@ class mit_b1(VisionTransformer):
             depths=[2, 2, 2, 2],
             sr_ratios=[8, 4, 2, 1],
             drop_path_rate=0.1,
-            embedding_dim = 256
+            embedding_dim=256,
         )
 
 
@@ -543,8 +542,8 @@ class SegFormerHead(nn.Module):
             in_channels=embedding_dim * 4,
             out_channels=embedding_dim,
             kernel_size=1,
-            norm_cfg=dict(type="BN", requires_grad=True),
-            # norm_cfg=dict(type="SyncBN", requires_grad=True), // Only GPU support SyncBN, couldn't running on CPU !!!
+            norm_cfg=dict(type="SyncBN", requires_grad=True),
+            # norm_cfg=dict(type="BN", requires_grad=True), // SyncBN Only GPU, please use BN for CPU !!!
         )
 
         self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
@@ -571,7 +570,6 @@ class SegFormerHead(nn.Module):
         ############## MLP decoder on C1-C4 ###########
         n, _, h, w = c4.shape
 
-
         _c4 = self.linear_c4(c4).permute(0, 2, 1).reshape(n, -1, c4.shape[2], c4.shape[3])
         _c4 = resize(_c4, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
@@ -592,8 +590,7 @@ class SegFormerHead(nn.Module):
 
 
 class SegmentModel(nn.Module):
-    """Encoder Decoder segmentors.
-    """
+    """Encoder Decoder segmentors."""
 
     def __init__(self):
         super(SegmentModel, self).__init__()
@@ -601,11 +598,19 @@ class SegmentModel(nn.Module):
         self.decode_head = SegFormerHead(self.backbone.embedding_dim)
         self.num_classes = self.decode_head.num_classes
 
-
     def forward(self, x):
-        x = self.backbone(x)
-        seg_logit = self.decode_head(x)
-        seg_logit =  F.softmax(seg_logit, dim=1)
+        f = self.backbone(x)
+        seg_logit = self.decode_head(f)
+        # x.size() -- torch.Size([1, 3, 960, 1280])
+        # len(f), f[0].size(), f[1].size(), f[2].size(), f[3].size()
+        # (4, torch.Size([1, 64, 240, 320]),
+        #     torch.Size([1, 128, 120, 160]),
+        #     torch.Size([1, 320, 60, 80]),
+        #     torch.Size([1, 512, 30, 40]))
+        # seg_logit.size() -- torch.Size([1, 150, 240, 320])
+
+        seg_logit = resize(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
+        seg_logit = F.softmax(seg_logit, dim=1)
         return seg_logit.argmax(dim=1).unsqueeze(0)
 
 
