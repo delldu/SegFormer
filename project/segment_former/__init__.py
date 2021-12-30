@@ -29,8 +29,6 @@ SEGMENT_MEAN = [0.485, 0.456, 0.406]
 SEGMENT_STD = [0.229, 0.224, 0.225]
 SEGMENT_TIMES = 4
 
-
-
 def get_model(checkpoint):
     """Create model."""
 
@@ -91,18 +89,14 @@ def image_client(name, input_files, output_dir):
         context = cmd.pmask(filename, output_file)
         redo.set_queue_task(context)
     print(f"Created {len(image_filenames)} tasks for {name}.")
-    print(redo)
-    pdb.set_trace()
-    
-
-
+    # print(redo)
 
 def image_server(name, HOST="localhost", port=6379):
     # load model
     checkpoint = os.path.dirname(__file__) + "/models/image_segment.pth"
     model, device = get_model(checkpoint)
 
-    def do_service(input_file, output_file):
+    def do_service(input_file, output_file, targ):
         print(f"  Segment {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
@@ -143,7 +137,7 @@ def image_predict(input_files, output_dir):
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
 
 
-def video_predict(input_file, output_file):
+def video_service(input_file, output_file, targ):
     # load video
     video = redos.video.Reader(input_file)
     if video.n_frames < 1:
@@ -195,4 +189,8 @@ def video_client(name, input_file, output_file):
 
 
 def video_server(name, HOST="localhost", port=6379):
-    return redos.video.service(name, "video_pmask", video_predict, HOST, port)
+    return redos.video.service(name, "video_pmask", video_service, HOST, port)
+
+
+def video_predict(input_file, output_file):
+    return video_service(input_file, output_file, None)
