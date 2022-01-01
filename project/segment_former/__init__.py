@@ -67,10 +67,9 @@ def model_forward(model, device, input_tensor):
 
     # zeropad for model
     H, W = input_tensor.size(2), input_tensor.size(3)
-    if H % SEGMENT_TIMES == 0 and H % SEGMENT_TIMES == 0:
+    if H % SEGMENT_TIMES == 0 and W % SEGMENT_TIMES == 0:
         output_tensor = todos.model.forward(model, device, input_tensor)
         final_tensor = blender_segment(image_tensor, output_tensor.cpu())
-
     else:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=SEGMENT_TIMES)
         output_tensor = todos.model.forward(model, device, input_tensor)

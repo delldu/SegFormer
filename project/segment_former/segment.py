@@ -517,7 +517,7 @@ class SegFormerHead(nn.Module):
     def __init__(self, embedding_dim=768):
         super(SegFormerHead, self).__init__()
         # for b1 -- embedding_dim == 256
-        # for b1 -- embedding_dim == 768
+        # for b2 -- embedding_dim == 768
 
         self.feature_strides = [4, 8, 16, 32]
         self.in_channels = [64, 128, 320, 512]
