@@ -2,45 +2,21 @@
 #
 # /************************************************************************************
 # ***
-# ***    Copyright Dell 2021, All Rights Reserved.
+# ***    Copyright Dell 2022, All Rights Reserved.
 # ***
-# ***    File Author: Dell, 2021年 12月 22日 星期三 23:13:05 CST
+# ***    File Author: Dell, 2022年 09月 27日 星期二 02:00:52 CST
 # ***
 # ************************************************************************************/
 #
 
-import math
-import os
 import pdb  # For debug
-import sys
-from functools import partial
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-def resize(input, size=None, scale_factor=None, mode="nearest", align_corners=None, warning=True):
-    if warning:
-        if size is not None and align_corners:
-            input_h, input_w = tuple(int(x) for x in input.shape[2:])
-            output_h, output_w = tuple(int(x) for x in size)
-            if output_h > input_h or output_w > output_h:
-                if (
-                    (output_h > 1 and output_w > 1 and input_h > 1 and input_w > 1)
-                    and (output_h - 1) % (input_h - 1)
-                    and (output_w - 1) % (input_w - 1)
-                ):
-                    warnings.warn(
-                        f"When align_corners={align_corners}, "
-                        "the output would more aligned if "
-                        f"input size {(input_h, input_w)} is `x+1` and "
-                        f"out size {(output_h, output_w)} is `nx+1`"
-                    )
-    if isinstance(size, torch.Size):
-        size = tuple(int(x) for x in size)
-
-    return F.interpolate(input, size, scale_factor, mode, align_corners)
+from torchvision.transforms.functional import normalize
+from typing import List
+from functools import partial
 
 
 class Mlp(nn.Module):
@@ -54,7 +30,7 @@ class Mlp(nn.Module):
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(0.0)
 
-    def forward(self, x, H, W):
+    def forward(self, x, H: int, W: int):
         x = self.fc1(x)
         x = self.dwconv(x, H, W)
         x = self.act(x)
@@ -89,8 +65,11 @@ class Attention(nn.Module):
         if sr_ratio > 1:
             self.sr = nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio)
             self.norm = nn.LayerNorm(dim)
+        else:  # Support torch.jit.script
+            self.sr = nn.Identity()
+            self.norm = nn.Identity()
 
-    def forward(self, x, H, W):
+    def forward(self, x, H: int, W: int):
         # print("Attention: forward-input: x:", x.size(), "H:", H, "W:", W)
         B, N, C = x.shape
         q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
@@ -113,13 +92,13 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
 
         # print("Attention: forward-output: x:", x.size())
-        # Attention: forward-input: x: torch.Size([1, 16384, 64]) H: 128 W: 128
-        # Attention: forward-output: x: torch.Size([1, 16384, 64])
-        # Attention: forward-input: x: torch.Size([1, 4096, 128]) H: 64 W: 64
-        # Attention: forward-output: x: torch.Size([1, 4096, 128])
-        # Attention: forward-input: x: torch.Size([1, 1024, 320]) H: 32 W: 32
-        # Attention: forward-output: x: torch.Size([1, 1024, 320])
-        # Attention: forward-input: x: torch.Size([1, 256, 512]) H: 16 W: 16
+        # Attention: forward-input: x: ([1, 16384, 64]) H: 128 W: 128
+        # Attention: forward-output: x: ([1, 16384, 64])
+        # Attention: forward-input: x: ([1, 4096, 128]) H: 64 W: 64
+        # Attention: forward-output: x: ([1, 4096, 128])
+        # Attention: forward-input: x: ([1, 1024, 320]) H: 32 W: 32
+        # Attention: forward-output: x: ([1, 1024, 320])
+        # Attention: forward-input: x: ([1, 256, 512]) H: 16 W: 16
         return x
 
 
@@ -143,7 +122,7 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
 
-    def forward(self, x, H, W):
+    def forward(self, x, H: int, W: int):
         x = x + self.drop_path(self.attn(self.norm1(x), H, W))
         x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
 
@@ -173,13 +152,13 @@ class OverlapPatchEmbed(nn.Module):
         # OverlapPatchEmbed:patch_size --  (3, 3)
         # OverlapPatchEmbed:patch_size --  (3, 3)
 
-    def forward(self, x):
+    def forward(self, x) -> List[torch.Tensor]:
         x = self.proj(x)
-        _, _, H, W = x.shape
+        proj_out = x
         x = x.flatten(2).transpose(1, 2)
         x = self.norm(x)
 
-        return x, H, W
+        return x, proj_out
 
 
 class VisionTransformer(nn.Module):
@@ -297,12 +276,13 @@ class VisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward(self, x):
+    def forward(self, x) -> List[torch.Tensor]:
         B = x.shape[0]
-        outs = []
+        outs: List[torch.Tensor] = []
 
         # stage 1
-        x, H, W = self.patch_embed1(x)
+        x, x_proj_out = self.patch_embed1(x)
+        _, _, H, W = x_proj_out.shape
         for i, blk in enumerate(self.block1):
             x = blk(x, H, W)
         x = self.norm1(x)
@@ -310,7 +290,8 @@ class VisionTransformer(nn.Module):
         outs.append(x)
 
         # stage 2
-        x, H, W = self.patch_embed2(x)
+        x, x_proj_out = self.patch_embed2(x)
+        _, _, H, W = x_proj_out.shape
         for i, blk in enumerate(self.block2):
             x = blk(x, H, W)
         x = self.norm2(x)
@@ -318,7 +299,8 @@ class VisionTransformer(nn.Module):
         outs.append(x)
 
         # stage 3
-        x, H, W = self.patch_embed3(x)
+        x, x_proj_out = self.patch_embed3(x)
+        _, _, H, W = x_proj_out.shape
         for i, blk in enumerate(self.block3):
             x = blk(x, H, W)
         x = self.norm3(x)
@@ -326,7 +308,8 @@ class VisionTransformer(nn.Module):
         outs.append(x)
 
         # stage 4
-        x, H, W = self.patch_embed4(x)
+        x, x_proj_out = self.patch_embed4(x)
+        _, _, H, W = x_proj_out.shape
         for i, blk in enumerate(self.block4):
             x = blk(x, H, W)
         x = self.norm4(x)
@@ -341,7 +324,7 @@ class DWConv(nn.Module):
         super(DWConv, self).__init__()
         self.dwconv = nn.Conv2d(dim, dim, 3, 1, 1, bias=True, groups=dim)
 
-    def forward(self, x, H, W):
+    def forward(self, x, H: int, W: int):
         B, N, C = x.shape
         x = x.transpose(1, 2).view(B, C, H, W)
         x = self.dwconv(x)
@@ -429,21 +412,21 @@ class MLP(nn.Module):
         x = x.flatten(2).transpose(1, 2)
         x = self.proj(x)
 
-        # (Pdb) x.size() -- torch.Size([1, 512, 16, 22])
+        # (Pdb) x.size() -- ([1, 512, 16, 22])
         # (Pdb) y = x.flatten(2).transpose(1, 2)
-        # (Pdb) y.size() -- torch.Size([1, 352, 512])
+        # (Pdb) y.size() -- ([1, 352, 512])
 
-        # MLP: forward-input:  torch.Size([1, 512, 16, 16])
-        # MLP: forward-output:  torch.Size([1, 256, 768])
+        # MLP: forward-input:  ([1, 512, 16, 16])
+        # MLP: forward-output:  ([1, 256, 768])
 
-        # MLP: forward-input:  torch.Size([1, 320, 32, 32])
-        # MLP: forward-output:  torch.Size([1, 1024, 768])
+        # MLP: forward-input:  ([1, 320, 32, 32])
+        # MLP: forward-output:  ([1, 1024, 768])
 
-        # MLP: forward-input:  torch.Size([1, 128, 64, 64])
-        # MLP: forward-output:  torch.Size([1, 4096, 768])
+        # MLP: forward-input:  ([1, 128, 64, 64])
+        # MLP: forward-output:  ([1, 4096, 768])
 
-        # MLP: forward-input:  torch.Size([1, 64, 128, 128])
-        # MLP: forward-output:  torch.Size([1, 16384, 768])
+        # MLP: forward-input:  ([1, 64, 128, 128])
+        # MLP: forward-output:  ([1, 16384, 768])
         return x
 
 
@@ -493,12 +476,8 @@ class ConvModule(nn.Module):
             stride=(1, 1),
             bias=False,
         )
-
-        # build normalization layers
-
         # norm_cfg=dict(type='SyncBN', requires_grad=True)
-        norm = build_norm_layer(norm_cfg, out_channels)
-        self.bn = norm
+        self.bn = build_norm_layer(norm_cfg, out_channels)
 
         self.activate = nn.ReLU(inplace=True)
 
@@ -542,42 +521,38 @@ class SegFormerHead(nn.Module):
             in_channels=embedding_dim * 4,
             out_channels=embedding_dim,
             kernel_size=1,
-            norm_cfg=dict(type="SyncBN", requires_grad=True),
-            # norm_cfg=dict(type="BN", requires_grad=True), // SyncBN Only GPU, please use BN for CPU !!!
+            # norm_cfg=dict(type="SyncBN", requires_grad=True),
+            norm_cfg=dict(type="BN", requires_grad=True),  # SyncBN Only GPU, please use BN for CPU !!!
         )
 
         self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
 
-    def forward(self, inputs):
-        # print("len(inputs) -- ", len(inputs))
-        # for i in range(len(inputs)):
-        #     print("inputs: ", i, " --- ", inputs[i].size())
+    def forward(self, inputs: List[torch.Tensor]):
         # len(inputs) --  4
-        # inputs:  0  ---  torch.Size([1, 64, 128, 128])
-        # inputs:  1  ---  torch.Size([1, 128, 64, 64])
-        # inputs:  2  ---  torch.Size([1, 320, 32, 32])
-        # inputs:  3  ---  torch.Size([1, 512, 16, 16])
+        # inputs:  0  ---  ([1, 64, 128, 128])
+        # inputs:  1  ---  ([1, 128, 64, 64])
+        # inputs:  2  ---  ([1, 320, 32, 32])
+        # inputs:  3  ---  ([1, 512, 16, 16])
 
         x = inputs  # len=4, 1/4,1/8,1/16,1/32
         c1, c2, c3, c4 = x
-        # print("c1, c2, c3, c4:", c1.size(), c2.size(), c3.size(), c4.size())
         # c1, c2, c3, c4:
-        # torch.Size([1, 64, 128, 128])
-        # torch.Size([1, 128, 64, 64])
-        # torch.Size([1, 320, 32, 32])
-        # torch.Size([1, 512, 16, 16])
+        # ([1, 64, 128, 128])
+        # ([1, 128, 64, 64])
+        # ([1, 320, 32, 32])
+        # ([1, 512, 16, 16])
 
         ############## MLP decoder on C1-C4 ###########
         n, _, h, w = c4.shape
 
         _c4 = self.linear_c4(c4).permute(0, 2, 1).reshape(n, -1, c4.shape[2], c4.shape[3])
-        _c4 = resize(_c4, size=c1.size()[2:], mode="bilinear", align_corners=False)
+        _c4 = F.interpolate(_c4, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
         _c3 = self.linear_c3(c3).permute(0, 2, 1).reshape(n, -1, c3.shape[2], c3.shape[3])
-        _c3 = resize(_c3, size=c1.size()[2:], mode="bilinear", align_corners=False)
+        _c3 = F.interpolate(_c3, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
         _c2 = self.linear_c2(c2).permute(0, 2, 1).reshape(n, -1, c2.shape[2], c2.shape[3])
-        _c2 = resize(_c2, size=c1.size()[2:], mode="bilinear", align_corners=False)
+        _c2 = F.interpolate(_c2, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
         _c1 = self.linear_c1(c1).permute(0, 2, 1).reshape(n, -1, c1.shape[2], c1.shape[3])
 
@@ -599,32 +574,20 @@ class SegmentModel(nn.Module):
         self.num_classes = self.decode_head.num_classes
 
     def forward(self, x):
+        # x.size() -- ([1, 3, 960, 1280])
+
+        # normalize first
+        x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
         f = self.backbone(x)
         seg_logit = self.decode_head(f)
-        # x.size() -- torch.Size([1, 3, 960, 1280])
         # len(f), f[0].size(), f[1].size(), f[2].size(), f[3].size()
-        # (4, torch.Size([1, 64, 240, 320]),
-        #     torch.Size([1, 128, 120, 160]),
-        #     torch.Size([1, 320, 60, 80]),
-        #     torch.Size([1, 512, 30, 40]))
-        # seg_logit.size() -- torch.Size([1, 150, 240, 320])
+        # (4, ([1, 64, 240, 320]),
+        #     ([1, 128, 120, 160]),
+        #     ([1, 320, 60, 80]),
+        #     ([1, 512, 30, 40]))
+        # seg_logit.size() -- ([1, 150, 240, 320])
 
-        seg_logit = resize(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
+        seg_logit = F.interpolate(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
         seg_logit = F.softmax(seg_logit, dim=1)
         return seg_logit.argmax(dim=1).unsqueeze(0)
-
-
-if __name__ == "__main__":
-    model = SegmentModel()
-    print(model)
-
-    # model = model.cuda()
-    model.eval()
-
-    # input = torch.randn(1, 3, 512, 512).cuda()
-    input = torch.randn(1, 3, 512, 512)
-
-    with torch.no_grad():
-        output = model(input)
-
-    print(output.size())

@@ -12,7 +12,6 @@
 __version__ = "1.0.0"
 
 import os
-import time
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -25,58 +24,58 @@ from . import ade20k
 
 import pdb
 
-SEGMENT_MEAN = [0.485, 0.456, 0.406]
-SEGMENT_STD = [0.229, 0.224, 0.225]
-SEGMENT_TIMES = 4
 
-def get_model(checkpoint):
+def get_model():
     """Create model."""
 
+    model_path = "models/image_segment.pth"
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+
+    device = todos.model.get_device()
     model = segment.SegmentModel()
     todos.model.load(model, checkpoint)
-    device = todos.model.get_device()
     model = model.to(device)
     model.eval()
+
+    print(f"Running on {device} ...")
+    model = torch.jit.script(model)
+
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_segment.torch"):
+        model.save("output/image_segment.torch")
 
     return model, device
 
 
 def blender_segment(input_tensor, output_tensor):
     palette = np.array(ade20k.ADE20K.PALETTE)
-
-    # input_tensor.size() -- [3, 512, 512]
-    color_numpy = np.zeros((input_tensor.size(1), input_tensor.size(2), 3), dtype=np.uint8)
+    B, C, H, W = input_tensor.size()
+    # input_tensor.size() -- [1, 3, 512, 512]
+    color_numpy = np.zeros((H, W, 3), dtype=np.uint8)
     mask_numpy = output_tensor.squeeze(0).squeeze(0).numpy()
     for label, color in enumerate(palette):
         color_numpy[mask_numpy == label, :] = color
-    color_tensor = torch.from_numpy(color_numpy).permute(2, 0, 1)
+    color_tensor = torch.from_numpy(color_numpy).permute(2, 0, 1).unsqueeze(0)
 
     return 0.5 * input_tensor.cpu() + 0.5 * color_tensor / 255.0
 
 
-def model_forward(model, device, input_tensor):
-    # normal_tensor only support CxHxW !!!
-    input_tensor = input_tensor.squeeze(0)
-
-    # image_tensor = input_tensor
-    image_tensor = torch.zeros_like(input_tensor)
-    image_tensor.copy_(input_tensor)
-
-    todos.data.normal_tensor(input_tensor, mean=SEGMENT_MEAN, std=SEGMENT_STD)
-    input_tensor = input_tensor.unsqueeze(0)
-
+def model_forward(model, device, input_tensor, multi_times=4):
     # zeropad for model
-    H, W = input_tensor.size(2), input_tensor.size(3)
-    if H % SEGMENT_TIMES == 0 and W % SEGMENT_TIMES == 0:
-        output_tensor = todos.model.forward(model, device, input_tensor)
-        final_tensor = blender_segment(image_tensor, output_tensor.cpu())
-    else:
-        input_tensor = todos.data.zeropad_tensor(input_tensor, times=SEGMENT_TIMES)
-        output_tensor = todos.model.forward(model, device, input_tensor)
-        output = blender_tensor[:, :, 0:H, 0:W]
-        final_tensor = blender_segment(image_tensor, output_tensor.cpu())
+    B, C, H, W = input_tensor.shape
+    if H % multi_times != 0 or W % multi_times != 0:
+        input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
 
-    return final_tensor.unsqueeze(0)
+    torch.cuda.synchronize()
+    with torch.jit.optimized_execution(False):
+        output_tensor = todos.model.forward(model, device, input_tensor)
+    torch.cuda.synchronize()
+
+    output_tensor = output_tensor[:, :, 0:H, 0:W]
+    final_tensor = blender_segment(input_tensor.cpu(), output_tensor.cpu())
+
+    return final_tensor
 
 
 def image_client(name, input_files, output_dir):
@@ -85,15 +84,15 @@ def image_client(name, input_files, output_dir):
     image_filenames = todos.data.load_files(input_files)
     for filename in image_filenames:
         output_file = f"{output_dir}/{os.path.basename(filename)}"
-        context = cmd.pmask(filename, output_file)
+        context = cmd.segment(filename, output_file)
         redo.set_queue_task(context)
     print(f"Created {len(image_filenames)} tasks for {name}.")
     # print(redo)
 
+
 def image_server(name, HOST="localhost", port=6379):
     # load model
-    checkpoint = os.path.dirname(__file__) + "/models/image_segment.pth"
-    model, device = get_model(checkpoint)
+    model, device = get_model()
 
     def do_service(input_file, output_file, targ):
         print(f"  Segment {input_file} ...")
@@ -105,7 +104,7 @@ def image_server(name, HOST="localhost", port=6379):
         except:
             return False
 
-    return redos.image.service(name, "image_pmask", do_service, HOST, port)
+    return redos.image.service(name, "image_segment", do_service, HOST, port)
 
 
 def image_predict(input_files, output_dir):
@@ -114,21 +113,20 @@ def image_predict(input_files, output_dir):
     # Create directory to store result
     todos.data.mkdir(output_dir)
 
-    # load model
-    checkpoint = os.path.dirname(__file__) + "/models/image_segment.pth"
-    model, device = get_model(checkpoint)
+    # Load model
+    model, device = get_model()
 
-    # load files
+    # Load files
     image_filenames = todos.data.load_files(input_files)
 
-    # start predict
+    # Start predict
     progress_bar = tqdm(total=len(image_filenames))
     for filename in image_filenames:
         progress_bar.update(1)
 
-        # orig input
+        # Original input
         input_tensor = todos.data.load_tensor(filename)
-        # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
+        # Pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
         orig_tensor = input_tensor.clone().detach()
         predict_tensor = model_forward(model, device, input_tensor)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
@@ -147,27 +145,24 @@ def video_service(input_file, output_file, targ):
     output_dir = output_file[0 : output_file.rfind(".")]
     todos.data.mkdir(output_dir)
 
-    # load model
-    checkpoint = os.path.dirname(__file__) + "/models/image_segment.pth"
-    model, device = get_model(checkpoint)
+    model, device = get_model()
 
-    print(f"  clean {input_file}, save to {output_file} ...")
+    print(f"  Segment {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
 
-    def clean_video_frame(no, data):
-        # print(f"frame: {no} -- {data.shape}")
+    def segment_video_frame(no, data):
         progress_bar.update(1)
 
         input_tensor = todos.data.frame_totensor(data)
 
-        # convert tensor from 1x4xHxW to 1x3xHxW
+        # Cnvert tensor from 1x4xHxW to 1x3xHxW
         input_tensor = input_tensor[:, 0:3, :, :]
         output_tensor = model_forward(model, device, input_tensor)
 
         temp_output_file = "{}/{:06d}.png".format(output_dir, no)
         todos.data.save_tensor(output_tensor, temp_output_file)
 
-    video.forward(callback=clean_video_frame)
+    video.forward(callback=segment_video_frame)
 
     redos.video.encode(output_dir, output_file)
 
@@ -181,14 +176,14 @@ def video_service(input_file, output_file, targ):
 
 def video_client(name, input_file, output_file):
     cmd = redos.video.Command()
-    context = cmd.pmask(input_file, output_file)
+    context = cmd.segment(input_file, output_file)
     redo = redos.Redos(name)
     redo.set_queue_task(context)
     print(f"Created 1 video tasks for {name}.")
 
 
 def video_server(name, HOST="localhost", port=6379):
-    return redos.video.service(name, "video_pmask", video_service, HOST, port)
+    return redos.video.service(name, "video_segment", video_service, HOST, port)
 
 
 def video_predict(input_file, output_file):

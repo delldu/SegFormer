@@ -16,4 +16,4 @@ uninstall:
 	python setup.py uninstall
 
 clean:
-	rm -rf build dist segment_former.egg-info
+	rm -rf build dist segment_former.egg-info __pycache__
