@@ -15,16 +15,16 @@ with open("README.md", "r") as file:
     long_description = file.read()
 
 setup(
-    name="segment_former",
+    name="image_segment",
     version="1.0.0",
     author="Dell Du",
     author_email="18588220928@163.com",
-    description="segment former package",
+    description="image segment package",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/delldu/SegFormer",
-    packages=["segment_former"],
-    package_data={"segment_former": ["models/image_weather.pth"]},
+    packages=["image_segment"],
+    package_data={"image_segment": ["models/image_segment.pth"]},
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",

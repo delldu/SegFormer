@@ -9,13 +9,13 @@
 # ************************************************************************************/
 #
 
-import segment_former
+import image_segment
 
 if __name__ == "__main__":
-    segment_former.image_predict("images/*.png", "output/predict")
+    image_segment.image_predict("images/*.png", "output/predict")
 
-    # segment_former.image_client("PAI", "images/*.png", "output/client")
-    # segment_former.image_server("PAI")
+    # image_segment.image_client("PAI", "images/*.png", "output/client")
+    # image_segment.image_server("PAI")
 
-    # segment_former.video_client("PAI", "/home/dell/tennis.mp4", "output/tennis.mp4")
-    # segment_former.video_server("PAI")
+    # image_segment.video_client("PAI", "/home/dell/tennis.mp4", "output/tennis.mp4")
+    # image_segment.video_server("PAI")
