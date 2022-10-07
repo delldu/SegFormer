@@ -22,7 +22,7 @@ setup(
     description="image segment package",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/delldu/SegFormer",
+    url="https://github.com/delldu/SegFormer.git",
     packages=["image_segment"],
     package_data={"image_segment": ["models/image_segment.pth"]},
     include_package_data=True,

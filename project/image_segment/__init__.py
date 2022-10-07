@@ -51,6 +51,7 @@ def get_model():
 def blender_segment(input_tensor, output_tensor):
     palette = np.array(ade20k.ADE20K.PALETTE)
     B, C, H, W = input_tensor.size()
+
     # input_tensor.size() -- [1, 3, 512, 512]
     color_numpy = np.zeros((H, W, 3), dtype=np.uint8)
     mask_numpy = output_tensor.squeeze(0).squeeze(0).numpy()
@@ -61,21 +62,16 @@ def blender_segment(input_tensor, output_tensor):
     return 0.5 * input_tensor.cpu() + 0.5 * color_tensor / 255.0
 
 
-def model_forward(model, device, input_tensor, multi_times=4):
+def model_forward(model, device, input_tensor, multi_times=1):
     # zeropad for model
     B, C, H, W = input_tensor.shape
     if H % multi_times != 0 or W % multi_times != 0:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
 
-    torch.cuda.synchronize()
-    with torch.jit.optimized_execution(False):
-        output_tensor = todos.model.forward(model, device, input_tensor)
-    torch.cuda.synchronize()
-
-    output_tensor = output_tensor[:, :, 0:H, 0:W]
+    output_tensor = todos.model.forward(model, device, input_tensor)
     final_tensor = blender_segment(input_tensor.cpu(), output_tensor.cpu())
 
-    return final_tensor
+    return final_tensor[:, :, 0:H, 0:W]
 
 
 def image_client(name, input_files, output_dir):
@@ -87,7 +83,6 @@ def image_client(name, input_files, output_dir):
         context = cmd.segment(filename, output_file)
         redo.set_queue_task(context)
     print(f"Created {len(image_filenames)} tasks for {name}.")
-    # print(redo)
 
 
 def image_server(name, HOST="localhost", port=6379):

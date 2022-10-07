@@ -590,4 +590,8 @@ class SegmentModel(nn.Module):
 
         seg_logit = F.interpolate(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
         seg_logit = F.softmax(seg_logit, dim=1)
-        return seg_logit.argmax(dim=1).unsqueeze(0)
+
+        mask = seg_logit.argmax(dim=1).unsqueeze(0)
+        # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
+
+        return mask
