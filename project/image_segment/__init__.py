@@ -54,7 +54,7 @@ def blender_segment(input_tensor, output_tensor):
 
     # input_tensor.size() -- [1, 3, 512, 512]
     color_numpy = np.zeros((H, W, 3), dtype=np.uint8)
-    mask_numpy = output_tensor.squeeze(0).squeeze(0).numpy()
+    mask_numpy = output_tensor.squeeze(0).squeeze(0).numpy().astype(np.uint8)
     for label, color in enumerate(palette):
         color_numpy[mask_numpy == label, :] = color
     color_tensor = torch.from_numpy(color_numpy).permute(2, 0, 1).unsqueeze(0)
@@ -72,34 +72,6 @@ def model_forward(model, device, input_tensor, multi_times=1):
     final_tensor = blender_segment(input_tensor.cpu(), output_tensor.cpu())
 
     return final_tensor[:, :, 0:H, 0:W]
-
-
-def image_client(name, input_files, output_dir):
-    redo = redos.Redos(name)
-    cmd = redos.image.Command()
-    image_filenames = todos.data.load_files(input_files)
-    for filename in image_filenames:
-        output_file = f"{output_dir}/{os.path.basename(filename)}"
-        context = cmd.segment(filename, output_file)
-        redo.set_queue_task(context)
-    print(f"Created {len(image_filenames)} tasks for {name}.")
-
-
-def image_server(name, HOST="localhost", port=6379):
-    # load model
-    model, device = get_model()
-
-    def do_service(input_file, output_file, targ):
-        print(f"  Segment {input_file} ...")
-        try:
-            input_tensor = todos.data.load_tensor(input_file)
-            output_tensor = model_forward(model, device, input_tensor)
-            todos.data.save_tensor(output_tensor, output_file)
-            return True
-        except:
-            return False
-
-    return redos.image.service(name, "image_segment", do_service, HOST, port)
 
 
 def image_predict(input_files, output_dir):
@@ -128,58 +100,4 @@ def image_predict(input_files, output_dir):
 
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
 
-
-def video_service(input_file, output_file, targ):
-    # load video
-    video = redos.video.Reader(input_file)
-    if video.n_frames < 1:
-        print(f"Read video {input_file} error.")
-        return False
-
-    # Create directory to store result
-    output_dir = output_file[0 : output_file.rfind(".")]
-    todos.data.mkdir(output_dir)
-
-    model, device = get_model()
-
-    print(f"  Segment {input_file}, save to {output_file} ...")
-    progress_bar = tqdm(total=video.n_frames)
-
-    def segment_video_frame(no, data):
-        progress_bar.update(1)
-
-        input_tensor = todos.data.frame_totensor(data)
-
-        # Cnvert tensor from 1x4xHxW to 1x3xHxW
-        input_tensor = input_tensor[:, 0:3, :, :]
-        output_tensor = model_forward(model, device, input_tensor)
-
-        temp_output_file = "{}/{:06d}.png".format(output_dir, no)
-        todos.data.save_tensor(output_tensor, temp_output_file)
-
-    video.forward(callback=segment_video_frame)
-
-    redos.video.encode(output_dir, output_file)
-
-    # delete temp files
-    for i in range(video.n_frames):
-        temp_output_file = "{}/{:06d}.png".format(output_dir, i)
-        os.remove(temp_output_file)
-
-    return True
-
-
-def video_client(name, input_file, output_file):
-    cmd = redos.video.Command()
-    context = cmd.segment(input_file, output_file)
-    redo = redos.Redos(name)
-    redo.set_queue_task(context)
-    print(f"Created 1 video tasks for {name}.")
-
-
-def video_server(name, HOST="localhost", port=6379):
-    return redos.video.service(name, "video_segment", video_service, HOST, port)
-
-
-def video_predict(input_file, output_file):
-    return video_service(input_file, output_file, None)
+    todos.model.reset_device()

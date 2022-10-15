@@ -18,6 +18,8 @@ from torchvision.transforms.functional import normalize
 from typing import List
 from functools import partial
 
+from . import ade20k
+
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU):
@@ -574,6 +576,7 @@ class SegmentModel(nn.Module):
         self.num_classes = self.decode_head.num_classes
 
     def forward(self, x):
+        B, C, H, W = x.shape
         # x.size() -- ([1, 3, 960, 1280])
 
         # normalize first
@@ -594,4 +597,4 @@ class SegmentModel(nn.Module):
         mask = seg_logit.argmax(dim=1).unsqueeze(0)
         # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
 
-        return mask
+        return mask.float()
