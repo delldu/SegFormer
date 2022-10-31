@@ -62,16 +62,11 @@ def blender_segment(input_tensor, output_tensor):
     return 0.5 * input_tensor.cpu() + 0.5 * color_tensor / 255.0
 
 
-def model_forward(model, device, input_tensor, multi_times=1):
-    # zeropad for model
-    B, C, H, W = input_tensor.shape
-    if H % multi_times != 0 or W % multi_times != 0:
-        input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
-
+def model_forward(model, device, input_tensor):
     output_tensor = todos.model.forward(model, device, input_tensor)
     final_tensor = blender_segment(input_tensor.cpu(), output_tensor.cpu())
 
-    return final_tensor[:, :, 0:H, 0:W]
+    return final_tensor
 
 
 def image_predict(input_files, output_dir):

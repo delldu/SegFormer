@@ -11,5 +11,4 @@
 
 import image_segment
 
-if __name__ == "__main__":
-    image_segment.image_predict("images/*.png", "output")
+image_segment.image_predict("images/*.png", "output")
