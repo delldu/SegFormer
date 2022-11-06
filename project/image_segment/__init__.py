@@ -25,7 +25,7 @@ from . import ade20k
 import pdb
 
 
-def get_model():
+def get_segment_model():
     """Create model."""
 
     model_path = "models/image_segment.pth"
@@ -76,7 +76,7 @@ def image_predict(input_files, output_dir):
     todos.data.mkdir(output_dir)
 
     # Load model
-    model, device = get_model()
+    model, device = get_segment_model()
 
     # Load files
     image_filenames = todos.data.load_files(input_files)
