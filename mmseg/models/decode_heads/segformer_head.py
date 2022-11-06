@@ -6,7 +6,7 @@
 import numpy as np
 import torch.nn as nn
 import torch
-from mmcv.cnn import ConvModule, DepthwiseSeparableConvModule
+from mmcv.cnn import ConvModule
 from collections import OrderedDict
 
 from mmseg.ops import resize
@@ -35,6 +35,12 @@ class MLP(nn.Module):
     def forward(self, x):
         x = x.flatten(2).transpose(1, 2)
         x = self.proj(x)
+
+        # (Pdb) x.size() -- torch.Size([1, 512, 16, 22])
+        # (Pdb) y = x.flatten(2).transpose(1, 2)
+        # (Pdb) y.size() -- torch.Size([1, 352, 512])
+
+
         # MLP: forward-input:  torch.Size([1, 512, 16, 16])
         # MLP: forward-output:  torch.Size([1, 256, 768])
 
@@ -58,6 +64,25 @@ class SegFormerHead(BaseDecodeHead):
         super(SegFormerHead, self).__init__(input_transform='multiple_select', **kwargs)
         assert len(feature_strides) == len(self.in_channels)
         assert min(feature_strides) == feature_strides[0]
+
+
+        # (Pdb) a 512x512 ade20k B2 backbone
+        # self = SegFormerHead(
+        #   input_transform=multiple_select, ignore_index=255, align_corners=False
+        #   (loss_decode): CrossEntropyLoss()
+        #   (conv_seg): Conv2d(128, 150, kernel_size=(1, 1), stride=(1, 1))
+        #   (dropout): Dropout2d(p=0.1, inplace=False)
+        # )
+        # feature_strides = [4, 8, 16, 32]
+        # kwargs = {'in_channels': [64, 128, 320, 512], 
+        #     'in_index': [0, 1, 2, 3], 'channels': 128, 'dropout_ratio': 0.1, 'num_classes': 150, 
+        #     'norm_cfg': {'type': 'SyncBN', 'requires_grad': True}, 
+        #     'align_corners': False, 'decoder_params': {'embed_dim': 768}, 
+        #     'loss_decode': {'type': 'CrossEntropyLoss', 'use_sigmoid': False, 'loss_weight': 1.0}}
+
+        # in_channels': [64, 128, 320, 512] ???
+
+
         self.feature_strides = feature_strides
 
         c1_in_channels, c2_in_channels, c3_in_channels, c4_in_channels = self.in_channels
@@ -66,6 +91,7 @@ class SegFormerHead(BaseDecodeHead):
         decoder_params = kwargs['decoder_params']
         # decoder_params -- {'embed_dim': 768}
         embedding_dim = decoder_params['embed_dim']
+        # embedding_dim == 256 for b1, == 768 for b2
 
         self.linear_c4 = MLP(input_dim=c4_in_channels, embed_dim=embedding_dim)
         self.linear_c3 = MLP(input_dim=c3_in_channels, embed_dim=embedding_dim)

@@ -28,6 +28,10 @@ def main():
 
     # build the model from a config file and a checkpoint file
     model = init_segmentor(args.config, args.checkpoint, device=args.device)
+
+    print(model)
+
+    
     # test a single image
     result = inference_segmentor(model, args.img)
     # show the results

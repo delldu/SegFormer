@@ -443,6 +443,22 @@ def inference_segmentor(model, img):
     #        [9, 9, 9, ..., 6, 6, 6],
     #        [9, 9, 9, ..., 6, 6, 6]])
     # result[0].min(), result[0].max() -- (0, 52)
+
+    # new test case 
+    # data['img'][0].size() -- torch.Size([1, 3, 512, 512])
+    #  data['img']
+    # [tensor([[[[ 1.8037,  1.8379,  1.9064,  ...,  1.6495,  1.6324,  1.6495],
+    #           [ 1.8037,  1.8550,  1.9064,  ...,  1.6495,  1.6324,  1.5982],
+    #           [ 1.8208,  1.8722,  1.9235,  ...,  1.6324,  1.5639,  1.5297],
+    #           ...,
+    #           ...,
+    #           [-0.6367, -0.6367, -0.7064,  ..., -1.0724, -0.8633, -0.8807],
+    #           [-0.8633, -0.8981, -0.7761,  ..., -1.0724, -0.9853, -0.8807],
+    #           [-0.9156, -1.0027, -0.8633,  ..., -0.8110, -0.9853, -1.0376]]]],
+    #        device='cuda:0')]
+
+    # result[0].shape -- (512, 512)
+
     return result
 
 
@@ -458,7 +474,7 @@ def show_result_pyplot(model, img, result, palette=None, fig_size=(15, 10)):
             Default: None
         fig_size (tuple): Figure size of the pyplot figure.
     """
-    hasattr(model, 'module') -- False
+    # hasattr(model, 'module') -- False
     if hasattr(model, 'module'):
         model = model.module
     img = model.show_result(img, result, palette=palette, show=False)
