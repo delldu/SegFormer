@@ -10,6 +10,7 @@
 #
 
 import pdb  # For debug
+import os
 
 import torch
 import torch.nn as nn
@@ -571,7 +572,7 @@ class SegmentModel(nn.Module):
 
     def __init__(self):
         super(SegmentModel, self).__init__()
-        # Define max GPU/CPU memory -- 6G
+        # Define max GPU/CPU memory -- 5G
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 4
@@ -580,7 +581,16 @@ class SegmentModel(nn.Module):
         self.decode_head = SegFormerHead(self.backbone.embedding_dim)
         self.num_classes = self.decode_head.num_classes
 
-    def forward_x(self, x):
+        self.load_weights()
+
+
+    def load_weights(self, model_path="models/image_segment.pth"):
+        cdir = os.path.dirname(__file__)
+        checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+        self.load_state_dict(torch.load(checkpoint))
+
+
+    def forward(self, x):
         B, C, H, W = x.shape
         # x.size() -- ([1, 3, 960, 1280])
 
@@ -603,29 +613,3 @@ class SegmentModel(nn.Module):
         # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
 
         return mask.float()
-
-    def forward(self, x):
-        # Need Resize ?
-        B, C, H, W = x.size()
-        if H > self.MAX_H or W > self.MAX_W:
-            s = min(self.MAX_H / H, self.MAX_W / W)
-            SH, SW = int(s * H), int(s * W)
-            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
-        else:
-            resize_x = x
-
-        # Need Pad ?
-        PH, PW = resize_x.size(2), resize_x.size(3)
-        if PH % self.MAX_TIMES != 0 or PW % self.MAX_TIMES != 0:
-            r_pad = self.MAX_TIMES - (PW % self.MAX_TIMES)
-            b_pad = self.MAX_TIMES - (PH % self.MAX_TIMES)
-            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-        else:
-            resize_pad_x = resize_x
-
-        y = self.forward_x(resize_pad_x)
-
-        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
-        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
-
-        return y
