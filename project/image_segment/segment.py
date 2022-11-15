@@ -572,7 +572,7 @@ class SegmentModel(nn.Module):
 
     def __init__(self):
         super(SegmentModel, self).__init__()
-        # Define max GPU/CPU memory -- 5G
+        # Define max GPU/CPU memory -- 5G, 150ms
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 4
