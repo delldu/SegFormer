@@ -381,12 +381,12 @@ class mit_b2(VisionTransformer):
 #             drop_path_rate=0.1)
 
 
-# class mit_b4(VisionTransformer):
-#     def __init__(self, **kwargs):
-#         super(mit_b4, self).__init__(
-#             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
-#             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 8, 27, 3], sr_ratios=[8, 4, 2, 1],
-#             drop_path_rate=0.1)
+class mit_b4(VisionTransformer):
+    def __init__(self, **kwargs):
+        super(mit_b4, self).__init__(
+            patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
+            norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 8, 27, 3], sr_ratios=[8, 4, 2, 1],
+            drop_path_rate=0.1)
 
 
 # class mit_b5(VisionTransformer):
@@ -572,25 +572,32 @@ class SegmentModel(nn.Module):
 
     def __init__(self):
         super(SegmentModel, self).__init__()
-        # Define max GPU/CPU memory -- 5G, 150ms
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 4
+        # GPU half model -- 4G, 120ms
 
-        self.backbone = mit_b2()
+        self.backbone = mit_b4()
         self.decode_head = SegFormerHead(self.backbone.embedding_dim)
         self.num_classes = self.decode_head.num_classes
 
         self.load_weights()
+        self.half().eval()
 
 
     def load_weights(self, model_path="models/image_segment.pth"):
         cdir = os.path.dirname(__file__)
         checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-        self.load_state_dict(torch.load(checkpoint))
+        sd = torch.load(checkpoint)
+        if 'state_dict' in sd.keys():
+            sd = sd['state_dict']
+        self.load_state_dict(sd)
 
 
     def forward(self, x):
+        if x.is_cuda:
+            x = x.half()
+
         B, C, H, W = x.shape
         # x.size() -- ([1, 3, 960, 1280])
 
