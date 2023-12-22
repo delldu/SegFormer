@@ -19,7 +19,6 @@ from torchvision.transforms.functional import normalize
 from typing import List
 from functools import partial
 
-from . import ade20k
 
 
 class Mlp(nn.Module):
@@ -59,12 +58,7 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(0.0)
 
-        self.sr_ratio = sr_ratio
-        # print("Attention: sr_ratio: ", sr_ratio)
-        # Attention: sr_ratio:  8
-        # Attention: sr_ratio:  4
-        # Attention: sr_ratio:  2
-        # Attention: sr_ratio:  1
+        self.sr_ratio = sr_ratio # maybe 8, 4, 2, 1
         if sr_ratio > 1:
             self.sr = nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio)
             self.norm = nn.LayerNorm(dim)
@@ -73,7 +67,6 @@ class Attention(nn.Module):
             self.norm = nn.Identity()
 
     def forward(self, x, H: int, W: int):
-        # print("Attention: forward-input: x:", x.size(), "H:", H, "W:", W)
         B, N, C = x.shape
         q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
 
@@ -94,22 +87,11 @@ class Attention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
 
-        # print("Attention: forward-output: x:", x.size())
-        # Attention: forward-input: x: ([1, 16384, 64]) H: 128 W: 128
-        # Attention: forward-output: x: ([1, 16384, 64])
-        # Attention: forward-input: x: ([1, 4096, 128]) H: 64 W: 64
-        # Attention: forward-output: x: ([1, 4096, 128])
-        # Attention: forward-input: x: ([1, 1024, 320]) H: 32 W: 32
-        # Attention: forward-output: x: ([1, 1024, 320])
-        # Attention: forward-input: x: ([1, 256, 512]) H: 16 W: 16
         return x
 
 
 class Block(nn.Module):
-    def __init__(
-        self,
-        dim,
-        num_heads,
+    def __init__(self, dim, num_heads,
         mlp_ratio=4.0,
         drop_path=0.0,
         act_layer=nn.GELU,
@@ -139,7 +121,7 @@ class OverlapPatchEmbed(nn.Module):
         super().__init__()
         patch_size = (patch_size, patch_size)
 
-        self.patch_size = patch_size
+        self.patch_size = patch_size # eg: (7, 7), (3, 3)
         self.proj = nn.Conv2d(
             in_chans,
             embed_dim,
@@ -149,11 +131,6 @@ class OverlapPatchEmbed(nn.Module):
         )
         self.norm = nn.LayerNorm(embed_dim)
 
-        # print("OverlapPatchEmbed:patch_size -- ", patch_size)
-        # OverlapPatchEmbed:patch_size --  (7, 7)
-        # OverlapPatchEmbed:patch_size --  (3, 3)
-        # OverlapPatchEmbed:patch_size --  (3, 3)
-        # OverlapPatchEmbed:patch_size --  (3, 3)
 
     def forward(self, x) -> List[torch.Tensor]:
         x = self.proj(x)
@@ -165,8 +142,7 @@ class OverlapPatchEmbed(nn.Module):
 
 
 class VisionTransformer(nn.Module):
-    def __init__(
-        self,
+    def __init__(self,
         patch_size=16,
         in_chans=3,
         num_classes=1000,
@@ -272,12 +248,12 @@ class VisionTransformer(nn.Module):
         # classification head
         # self.head = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
 
-    def get_classifier(self):
-        return self.head
+    # def get_classifier(self):
+    #     return self.head
 
-    def reset_classifier(self, num_classes):
-        self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+    # def reset_classifier(self, num_classes):
+    #     self.num_classes = num_classes
+    #     self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
     def forward(self, x) -> List[torch.Tensor]:
         B = x.shape[0]
@@ -324,7 +300,7 @@ class VisionTransformer(nn.Module):
 
 class DWConv(nn.Module):
     def __init__(self, dim=768):
-        super(DWConv, self).__init__()
+        super().__init__()
         self.dwconv = nn.Conv2d(dim, dim, 3, 1, 1, bias=True, groups=dim)
 
     def forward(self, x, H: int, W: int):
@@ -338,44 +314,44 @@ class DWConv(nn.Module):
 
 # class mit_b0(VisionTransformer):
 #     def __init__(self, **kwargs):
-#         super(mit_b0, self).__init__(
+#         super().__init__(
 #             patch_size=4, embed_dims=[32, 64, 160, 256], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
 #             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[2, 2, 2, 2], sr_ratios=[8, 4, 2, 1],
 #             drop_path_rate=0.1,embedding_dim = 256)
 
 
-class mit_b1(VisionTransformer):
-    def __init__(self, **kwargs):
-        super(mit_b1, self).__init__(
-            patch_size=4,
-            embed_dims=[64, 128, 320, 512],
-            num_heads=[1, 2, 5, 8],
-            mlp_ratios=[4, 4, 4, 4],
-            norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            depths=[2, 2, 2, 2],
-            sr_ratios=[8, 4, 2, 1],
-            drop_path_rate=0.1,
-            embedding_dim=256,
-        )
+# class mit_b1(VisionTransformer):
+#     def __init__(self, **kwargs):
+#         super().__init__(
+#             patch_size=4,
+#             embed_dims=[64, 128, 320, 512],
+#             num_heads=[1, 2, 5, 8],
+#             mlp_ratios=[4, 4, 4, 4],
+#             norm_layer=partial(nn.LayerNorm, eps=1e-6),
+#             depths=[2, 2, 2, 2],
+#             sr_ratios=[8, 4, 2, 1],
+#             drop_path_rate=0.1,
+#             embedding_dim=256,
+#         )
 
 
-class mit_b2(VisionTransformer):
-    def __init__(self, **kwargs):
-        super(mit_b2, self).__init__(
-            patch_size=4,
-            embed_dims=[64, 128, 320, 512],
-            num_heads=[1, 2, 5, 8],
-            mlp_ratios=[4, 4, 4, 4],
-            norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            depths=[3, 4, 6, 3],
-            sr_ratios=[8, 4, 2, 1],
-            drop_path_rate=0.1,
-        )
+# class mit_b2(VisionTransformer):
+#     def __init__(self, **kwargs):
+#         super().__init__(
+#             patch_size=4,
+#             embed_dims=[64, 128, 320, 512],
+#             num_heads=[1, 2, 5, 8],
+#             mlp_ratios=[4, 4, 4, 4],
+#             norm_layer=partial(nn.LayerNorm, eps=1e-6),
+#             depths=[3, 4, 6, 3],
+#             sr_ratios=[8, 4, 2, 1],
+#             drop_path_rate=0.1,
+#         )
 
 
 # class mit_b3(VisionTransformer):
 #     def __init__(self, **kwargs):
-#         super(mit_b3, self).__init__(
+#         super().__init__(
 #             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
 #             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 4, 18, 3], sr_ratios=[8, 4, 2, 1],
 #             drop_path_rate=0.1)
@@ -383,7 +359,7 @@ class mit_b2(VisionTransformer):
 
 class mit_b4(VisionTransformer):
     def __init__(self, **kwargs):
-        super(mit_b4, self).__init__(
+        super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 8, 27, 3], sr_ratios=[8, 4, 2, 1],
             drop_path_rate=0.1)
@@ -391,7 +367,7 @@ class mit_b4(VisionTransformer):
 
 # class mit_b5(VisionTransformer):
 #     def __init__(self, **kwargs):
-#         super(mit_b5, self).__init__(
+#         super().__init__(
 #             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
 #             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 6, 40, 3], sr_ratios=[8, 4, 2, 1],
 #             drop_path_rate=0.1)
@@ -405,72 +381,23 @@ class MLP(nn.Module):
     def __init__(self, input_dim=2048, embed_dim=768):
         super().__init__()
         self.proj = nn.Linear(input_dim, embed_dim)
-        # print("MLP: ", self.proj)
-        # MLP:  Linear(in_features=512, out_features=768, bias=True)
-        # MLP:  Linear(in_features=320, out_features=768, bias=True)
-        # MLP:  Linear(in_features=128, out_features=768, bias=True)
-        # MLP:  Linear(in_features=64, out_features=768, bias=True)
 
     def forward(self, x):
         x = x.flatten(2).transpose(1, 2)
         x = self.proj(x)
-
-        # (Pdb) x.size() -- ([1, 512, 16, 22])
-        # (Pdb) y = x.flatten(2).transpose(1, 2)
-        # (Pdb) y.size() -- ([1, 352, 512])
-
-        # MLP: forward-input:  ([1, 512, 16, 16])
-        # MLP: forward-output:  ([1, 256, 768])
-
-        # MLP: forward-input:  ([1, 320, 32, 32])
-        # MLP: forward-output:  ([1, 1024, 768])
-
-        # MLP: forward-input:  ([1, 128, 64, 64])
-        # MLP: forward-output:  ([1, 4096, 768])
-
-        # MLP: forward-input:  ([1, 64, 128, 128])
-        # MLP: forward-output:  ([1, 16384, 768])
         return x
-
-
-def build_norm_layer(cfg, num_features):
-    """Build normalization layer."""
-    # cfg = {'type': 'SyncBN', 'requires_grad': True}
-    # num_features = 768
-
-    cfg_ = cfg.copy()
-    layer_type = cfg_.pop("type")
-    # layer_type -- 'SyncBN'
-
-    if layer_type == "SyncBN":
-        norm_layer = nn.SyncBatchNorm
-    else:
-        norm_layer = nn.BatchNorm2d
-    requires_grad = cfg_.pop("requires_grad", True)
-    cfg_.setdefault("eps", 1e-5)
-
-    layer = norm_layer(num_features, **cfg_)
-    if layer_type == "SyncBN":
-        layer._specify_ddp_gpu_num(1)
-
-    # pp requires_grad -- True
-    for param in layer.parameters():
-        param.requires_grad = requires_grad
-
-    return layer
 
 
 class ConvModule(nn.Module):
     """A conv block that bundles conv/norm/activation layers."""
 
-    def __init__(
-        self,
+    def __init__(self,
         in_channels,
         out_channels,
         kernel_size,
         norm_cfg=None,
     ):
-        super(ConvModule, self).__init__()
+        super().__init__()
 
         self.conv = nn.Conv2d(
             in_channels,
@@ -479,8 +406,7 @@ class ConvModule(nn.Module):
             stride=(1, 1),
             bias=False,
         )
-        # norm_cfg=dict(type='SyncBN', requires_grad=True)
-        self.bn = build_norm_layer(norm_cfg, out_channels)
+        self.bn = nn.BatchNorm2d(out_channels)
 
         self.activate = nn.ReLU(inplace=True)
 
@@ -497,7 +423,7 @@ class SegFormerHead(nn.Module):
     """
 
     def __init__(self, embedding_dim=768):
-        super(SegFormerHead, self).__init__()
+        super().__init__()
         # for b1 -- embedding_dim == 256
         # for b2 -- embedding_dim == 768
 
@@ -571,7 +497,7 @@ class SegmentModel(nn.Module):
     """Encoder Decoder segmentors."""
 
     def __init__(self):
-        super(SegmentModel, self).__init__()
+        super().__init__()
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 4
@@ -613,10 +539,12 @@ class SegmentModel(nn.Module):
         #     ([1, 512, 30, 40]))
         # seg_logit.size() -- ([1, 150, 240, 320])
 
-        seg_logit = F.interpolate(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
+        # seg_logit = F.interpolate(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
+
+        seg_logit = F.interpolate(seg_logit, size=(H,W), mode="bilinear", align_corners=False)
         seg_logit = F.softmax(seg_logit, dim=1)
 
         mask = seg_logit.argmax(dim=1).unsqueeze(0)
         # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
 
-        return mask.float()
+        return mask.clamp(0, self.num_classes).float() # ADE20K class number is 150
