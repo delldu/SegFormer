@@ -42,25 +42,25 @@ def get_segment_model():
 
     device = todos.model.get_device()
     model = segment.SegmentModel()
-    model = todos.model.ResizePadModel(model)
+    # model = todos.model.ResizePadModel(model)
     model = model.to(device)
     model.eval()
 
     print(f"Running on {device} ...")
-    if 'cpu' in str(device.type):
-        model.float()
+    # if 'cpu' in str(device.type):
+    #     model.float()
 
-    # make sure model good for C/C++
-    model = torch.jit.script(model)
-    # https://github.com/pytorch/pytorch/issues/52286
-    torch._C._jit_set_profiling_executor(False)
-    # C++ Reference
-    # torch::jit::getProfilingMode() = false;                                                                                                             
-    # torch::jit::setTensorExprFuserEnabled(false);
+    # # make sure model good for C/C++
+    # model = torch.jit.script(model)
+    # # https://github.com/pytorch/pytorch/issues/52286
+    # torch._C._jit_set_profiling_executor(False)
+    # # C++ Reference
+    # # torch::jit::getProfilingMode() = false;                                                                                                             
+    # # torch::jit::setTensorExprFuserEnabled(false);
 
-    todos.data.mkdir("output")
-    if not os.path.exists("output/image_segment.torch"):
-        model.save("output/image_segment.torch")
+    # todos.data.mkdir("output")
+    # if not os.path.exists("output/image_segment.torch"):
+    #     model.save("output/image_segment.torch")
 
     return model, device
 

@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.transforms.functional import normalize
-from typing import List
+from typing import List, Tuple
 from functools import partial
 
 
@@ -132,13 +132,14 @@ class OverlapPatchEmbed(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
 
-    def forward(self, x) -> List[torch.Tensor]:
+    # def forward(self, x) -> List[torch.Tensor]:
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.proj(x)
         proj_out = x
         x = x.flatten(2).transpose(1, 2)
         x = self.norm(x)
 
-        return x, proj_out
+        return (x, proj_out)
 
 
 class VisionTransformer(nn.Module):
@@ -245,17 +246,7 @@ class VisionTransformer(nn.Module):
         )
         self.norm4 = norm_layer(embed_dims[3])
 
-        # classification head
-        # self.head = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
-
-    # def get_classifier(self):
-    #     return self.head
-
-    # def reset_classifier(self, num_classes):
-    #     self.num_classes = num_classes
-    #     self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-
-    def forward(self, x) -> List[torch.Tensor]:
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: #List[torch.Tensor]:
         B = x.shape[0]
         outs: List[torch.Tensor] = []
 
@@ -266,6 +257,7 @@ class VisionTransformer(nn.Module):
             x = blk(x, H, W)
         x = self.norm1(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x1 = x
         outs.append(x)
 
         # stage 2
@@ -275,6 +267,8 @@ class VisionTransformer(nn.Module):
             x = blk(x, H, W)
         x = self.norm2(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x2 = x
+
         outs.append(x)
 
         # stage 3
@@ -284,6 +278,8 @@ class VisionTransformer(nn.Module):
             x = blk(x, H, W)
         x = self.norm3(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x3 = x
+
         outs.append(x)
 
         # stage 4
@@ -293,9 +289,11 @@ class VisionTransformer(nn.Module):
             x = blk(x, H, W)
         x = self.norm4(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x4 = x
+
         outs.append(x)
 
-        return outs
+        return (x1, x2, x3, x4) # outs
 
 
 class DWConv(nn.Module):
@@ -385,7 +383,7 @@ class MLP(nn.Module):
     def forward(self, x):
         x = x.flatten(2).transpose(1, 2)
         x = self.proj(x)
-        return x
+        return x.permute(0, 2, 1)
 
 
 class ConvModule(nn.Module):
@@ -433,7 +431,6 @@ class SegFormerHead(nn.Module):
 
         self.conv_seg = nn.Conv2d(128, self.num_classes, kernel_size=1)
         self.dropout = nn.Dropout2d(0.1)
-
         (
             c1_in_channels,
             c2_in_channels,
@@ -451,12 +448,14 @@ class SegFormerHead(nn.Module):
             out_channels=embedding_dim,
             kernel_size=1,
             # norm_cfg=dict(type="SyncBN", requires_grad=True),
-            norm_cfg=dict(type="BN", requires_grad=True),  # SyncBN Only GPU, please use BN for CPU !!!
+            norm_cfg=dict(type="BN", requires_grad=False),  # SyncBN Only GPU, use BN for CPU !!!
         )
 
         self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
 
-    def forward(self, inputs: List[torch.Tensor]):
+    # def forward(self, inputs: List[torch.Tensor]):
+    def forward(self, inputs: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
+
         # len(inputs) --  4
         # inputs:  0  ---  ([1, 64, 128, 128])
         # inputs:  1  ---  ([1, 128, 64, 64])
@@ -474,16 +473,20 @@ class SegFormerHead(nn.Module):
         ############## MLP decoder on C1-C4 ###########
         n, _, h, w = c4.shape
 
-        _c4 = self.linear_c4(c4).permute(0, 2, 1).reshape(n, -1, c4.shape[2], c4.shape[3])
+        # pdb.set_trace()
+        # c4.size() -- [1, 512, 30, 40]
+        # self.linear_c4(c4).size() -- [1, 768, 1200]
+
+        _c4 = self.linear_c4(c4).reshape(n, -1, c4.shape[2], c4.shape[3])
         _c4 = F.interpolate(_c4, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
-        _c3 = self.linear_c3(c3).permute(0, 2, 1).reshape(n, -1, c3.shape[2], c3.shape[3])
+        _c3 = self.linear_c3(c3).reshape(n, -1, c3.shape[2], c3.shape[3])
         _c3 = F.interpolate(_c3, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
-        _c2 = self.linear_c2(c2).permute(0, 2, 1).reshape(n, -1, c2.shape[2], c2.shape[3])
+        _c2 = self.linear_c2(c2).reshape(n, -1, c2.shape[2], c2.shape[3])
         _c2 = F.interpolate(_c2, size=c1.size()[2:], mode="bilinear", align_corners=False)
 
-        _c1 = self.linear_c1(c1).permute(0, 2, 1).reshape(n, -1, c1.shape[2], c1.shape[3])
+        _c1 = self.linear_c1(c1).reshape(n, -1, c1.shape[2], c1.shape[3])
 
         _c = self.linear_fuse(torch.cat([_c4, _c3, _c2, _c1], dim=1))
         x = self.dropout(_c)
@@ -508,7 +511,7 @@ class SegmentModel(nn.Module):
         self.num_classes = self.decode_head.num_classes
 
         self.load_weights()
-        self.half().eval()
+        self.eval()
 
 
     def load_weights(self, model_path="models/image_segment.pth"):
@@ -521,14 +524,19 @@ class SegmentModel(nn.Module):
 
 
     def forward(self, x):
-        if x.is_cuda:
-            x = x.half()
+        # if x.is_cuda:
+        #     x = x.half()
 
         B, C, H, W = x.shape
-        # x.size() -- ([1, 3, 960, 1280])
 
         # normalize first
         x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
+        # x.size() -- ([1, 3, 960, 1280])
+        r_pad = (self.MAX_TIMES - (W % self.MAX_TIMES)) % self.MAX_TIMES
+        b_pad = (self.MAX_TIMES - (H % self.MAX_TIMES)) % self.MAX_TIMES
+        x = F.pad(x, (0, r_pad, 0, b_pad), mode="replicate")
+
 
         f = self.backbone(x)
         seg_logit = self.decode_head(f)
@@ -539,12 +547,13 @@ class SegmentModel(nn.Module):
         #     ([1, 512, 30, 40]))
         # seg_logit.size() -- ([1, 150, 240, 320])
 
-        # seg_logit = F.interpolate(seg_logit, size=x.size()[2:], mode="bilinear", align_corners=False)
 
         seg_logit = F.interpolate(seg_logit, size=(H,W), mode="bilinear", align_corners=False)
         seg_logit = F.softmax(seg_logit, dim=1)
 
         mask = seg_logit.argmax(dim=1).unsqueeze(0)
         # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
+
+        mask = mask[:, :, 0:H, 0:W]
 
         return mask.clamp(0, self.num_classes).float() # ADE20K class number is 150

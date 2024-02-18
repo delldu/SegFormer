@@ -72,7 +72,8 @@ def run_bench_mark():
 def export_onnx_model():
     import onnx
     import onnxruntime
-    from onnxsim import simplify
+    # from onnxsim import simplify
+    import onnxoptimizer
 
     print("Export onnx model ...")
 
@@ -80,7 +81,7 @@ def export_onnx_model():
     model, device = image_segment.get_segment_model()
     # model = torch.jit.script(model)
 
-    B, C, H, W = 1, 3, model.max_h, model.max_w
+    B, C, H, W = 1, 3, 1024, 1024 # model.max_h, model.max_w
     dummy_input = torch.randn(B, C, H, W).to(device)
     with torch.no_grad():
         dummy_output = model(dummy_input)
@@ -89,17 +90,26 @@ def export_onnx_model():
     # 2. Export onnx model
     input_names = [ "input" ]
     output_names = [ "output" ]
+    dynamic_axes = { 
+        'input' : {2: 'height', 3: 'width'}, 
+        'output' : {2: 'height', 3: 'width'} 
+    }    
     onnx_filename = "output/image_segment.onnx"
 
     torch.onnx.export(model, dummy_input, onnx_filename, 
-        verbose=False, input_names=input_names, output_names=output_names)
+        verbose=False, 
+        input_names=input_names, 
+        output_names=output_names,
+        # dynamic_axes=dynamic_axes,
+    )
 
     # 3. Check onnx model file
     onnx_model = onnx.load(onnx_filename)
     onnx.checker.check_model(onnx_model)
 
-    onnx_model, check = simplify(onnx_model)
-    assert check, "Simplified ONNX model could not be validated"
+    # onnx_model, check = simplify(onnx_model)
+    # assert check, "Simplified ONNX model could not be validated"
+    onnx_model = onnxoptimizer.optimize(onnx_model)    
     onnx.save(onnx_model, onnx_filename)
     # print(onnx.helper.printable_graph(onnx_model.graph))
 
