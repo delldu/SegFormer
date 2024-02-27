@@ -72,16 +72,15 @@ def run_bench_mark():
 def export_onnx_model():
     import onnx
     import onnxruntime
-    # from onnxsim import simplify
+    from onnxsim import simplify
     import onnxoptimizer
 
     print("Export onnx model ...")
 
     # 1. Run torch model
-    model, device = image_segment.get_segment_model()
-    # model = torch.jit.script(model)
+    model, device = image_segment.get_trace_model() # image_segment.get_segment_model()
 
-    B, C, H, W = 1, 3, 1024, 1024 # model.max_h, model.max_w
+    B, C, H, W = 1, 3, 256, 256 # model.max_h, model.max_w
     dummy_input = torch.randn(B, C, H, W).to(device)
     with torch.no_grad():
         dummy_output = model(dummy_input)
@@ -100,15 +99,15 @@ def export_onnx_model():
         verbose=False, 
         input_names=input_names, 
         output_names=output_names,
-        # dynamic_axes=dynamic_axes,
+        dynamic_axes=dynamic_axes,
     )
 
     # 3. Check onnx model file
     onnx_model = onnx.load(onnx_filename)
     onnx.checker.check_model(onnx_model)
 
-    # onnx_model, check = simplify(onnx_model)
-    # assert check, "Simplified ONNX model could not be validated"
+    onnx_model, check = simplify(onnx_model)
+    assert check, "Simplified ONNX model could not be validated"
     onnx_model = onnxoptimizer.optimize(onnx_model)    
     onnx.save(onnx_model, onnx_filename)
     # print(onnx.helper.printable_graph(onnx_model.graph))
@@ -146,7 +145,7 @@ if __name__ == "__main__":
     if args.bench_mark:
         run_bench_mark()
     if args.export_onnx:
-        export_onnx_model()
+        export_onnx_model() # OK for trace mode, NOK for torch.jit.script mode
     
     if not (args.shape_test or args.bench_mark or args.export_onnx):
         parser.print_help()

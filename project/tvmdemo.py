@@ -37,7 +37,7 @@ def blender_segment(input_tensor, output_tensor):
     return 0.5 * input_tensor.cpu() + 0.5 * color_tensor / 255.0
 
 def compile():
-    model, device = image_segment.get_tvm_model()
+    model, device = image_segment.get_trace_model()
 
     todos.data.mkdir("output")
     if not os.path.exists("output/image_segment.so"):

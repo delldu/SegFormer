@@ -2,24 +2,24 @@
 #
 # /************************************************************************************
 # ***
-# ***    Copyright Dell 2022, All Rights Reserved.
+# ***    Copyright Dell 2022-2024, All Rights Reserved.
 # ***
 # ***    File Author: Dell, 2022年 09月 27日 星期二 02:00:52 CST
 # ***
 # ************************************************************************************/
 #
 
-import pdb  # For debug
 import os
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.transforms.functional import normalize
-from typing import List, Tuple
+from typing import Tuple
 from functools import partial
 
+import pdb  # For debug
 
+FEATURE_RESULT_TYPE = Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU):
@@ -30,15 +30,15 @@ class Mlp(nn.Module):
         self.dwconv = DWConv(hidden_features)
         self.act = act_layer()
         self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(0.0)
+        # self.drop = nn.Dropout(0.0)
 
     def forward(self, x, H: int, W: int):
         x = self.fc1(x)
         x = self.dwconv(x, H, W)
         x = self.act(x)
-        x = self.drop(x)
+        # x = self.drop(x)
         x = self.fc2(x)
-        x = self.drop(x)
+        # x = self.drop(x)
         return x
 
 
@@ -47,16 +47,16 @@ class Attention(nn.Module):
         super().__init__()
         assert dim % num_heads == 0, f"dim {dim} should be divided by num_heads {num_heads}."
 
-        self.dim = dim
+        # self.dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
 
         self.q = nn.Linear(dim, dim, bias=True)
         self.kv = nn.Linear(dim, dim * 2, bias=True)
-        self.attn_drop = nn.Dropout(0.0)
+        # self.attn_drop = nn.Dropout(0.0)
         self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(0.0)
+        # self.proj_drop = nn.Dropout(0.0)
 
         self.sr_ratio = sr_ratio # maybe 8, 4, 2, 1
         if sr_ratio > 1:
@@ -81,11 +81,11 @@ class Attention(nn.Module):
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
+        # attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
-        x = self.proj_drop(x)
+        # x = self.proj_drop(x)
 
         return x
 
@@ -93,7 +93,7 @@ class Attention(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, num_heads,
         mlp_ratio=4.0,
-        drop_path=0.0,
+        # drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         sr_ratio=1,
@@ -102,15 +102,16 @@ class Block(nn.Module):
         self.norm1 = norm_layer(dim)
         self.attn = Attention(dim, num_heads=num_heads, sr_ratio=sr_ratio)
 
-        self.drop_path = nn.Identity()
+        # self.drop_path = nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
 
     def forward(self, x, H: int, W: int):
-        x = x + self.drop_path(self.attn(self.norm1(x), H, W))
-        x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
-
+        # x = x + self.drop_path(self.attn(self.norm1(x), H, W))
+        # x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
+        x = x + self.attn(self.norm1(x), H, W) 
+        x = x + self.mlp(self.norm2(x), H, W)
         return x
 
 
@@ -122,17 +123,13 @@ class OverlapPatchEmbed(nn.Module):
         patch_size = (patch_size, patch_size)
 
         self.patch_size = patch_size # eg: (7, 7), (3, 3)
-        self.proj = nn.Conv2d(
-            in_chans,
-            embed_dim,
+        self.proj = nn.Conv2d(in_chans, embed_dim,
             kernel_size=patch_size,
             stride=stride,
             padding=(patch_size[0] // 2, patch_size[1] // 2),
         )
         self.norm = nn.LayerNorm(embed_dim)
 
-
-    # def forward(self, x) -> List[torch.Tensor]:
     def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.proj(x)
         proj_out = x
@@ -150,7 +147,7 @@ class VisionTransformer(nn.Module):
         embed_dims=[64, 128, 256, 512],
         num_heads=[1, 2, 4, 8],
         mlp_ratios=[4, 4, 4, 4],
-        drop_path_rate=0.0,
+        # drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
         depths=[3, 4, 6, 3],
         sr_ratios=[8, 4, 2, 1],
@@ -171,7 +168,7 @@ class VisionTransformer(nn.Module):
         # sr_ratios = [8, 4, 2, 1]
 
         self.num_classes = num_classes
-        self.depths = depths
+        # self.depths = depths
         self.embedding_dim = embedding_dim
 
         # patch_embed
@@ -181,15 +178,15 @@ class VisionTransformer(nn.Module):
         self.patch_embed4 = OverlapPatchEmbed(patch_size=3, stride=2, in_chans=embed_dims[2], embed_dim=embed_dims[3])
 
         # transformer encoder
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
-        cur = 0
+        # dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+        # cur = 0
         self.block1 = nn.ModuleList(
             [
                 Block(
                     dim=embed_dims[0],
                     num_heads=num_heads[0],
                     mlp_ratio=mlp_ratios[0],
-                    drop_path=dpr[cur + i],
+                    # drop_path=dpr[cur + i],
                     norm_layer=norm_layer,
                     sr_ratio=sr_ratios[0],
                 )
@@ -198,14 +195,14 @@ class VisionTransformer(nn.Module):
         )
         self.norm1 = norm_layer(embed_dims[0])
 
-        cur += depths[0]
+        # cur += depths[0]
         self.block2 = nn.ModuleList(
             [
                 Block(
                     dim=embed_dims[1],
                     num_heads=num_heads[1],
                     mlp_ratio=mlp_ratios[1],
-                    drop_path=dpr[cur + i],
+                    # drop_path=dpr[cur + i],
                     norm_layer=norm_layer,
                     sr_ratio=sr_ratios[1],
                 )
@@ -214,14 +211,14 @@ class VisionTransformer(nn.Module):
         )
         self.norm2 = norm_layer(embed_dims[1])
 
-        cur += depths[1]
+        # cur += depths[1]
         self.block3 = nn.ModuleList(
             [
                 Block(
                     dim=embed_dims[2],
                     num_heads=num_heads[2],
                     mlp_ratio=mlp_ratios[2],
-                    drop_path=dpr[cur + i],
+                    # drop_path=dpr[cur + i],
                     norm_layer=norm_layer,
                     sr_ratio=sr_ratios[2],
                 )
@@ -230,14 +227,14 @@ class VisionTransformer(nn.Module):
         )
         self.norm3 = norm_layer(embed_dims[2])
 
-        cur += depths[2]
+        # cur += depths[2]
         self.block4 = nn.ModuleList(
             [
                 Block(
                     dim=embed_dims[3],
                     num_heads=num_heads[3],
                     mlp_ratio=mlp_ratios[3],
-                    drop_path=dpr[cur + i],
+                    # drop_path=dpr[cur + i],
                     norm_layer=norm_layer,
                     sr_ratio=sr_ratios[3],
                 )
@@ -246,9 +243,8 @@ class VisionTransformer(nn.Module):
         )
         self.norm4 = norm_layer(embed_dims[3])
 
-    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: #List[torch.Tensor]:
+    def forward(self, x) -> FEATURE_RESULT_TYPE:
         B = x.shape[0]
-        outs: List[torch.Tensor] = []
 
         # stage 1
         x, x_proj_out = self.patch_embed1(x)
@@ -258,7 +254,6 @@ class VisionTransformer(nn.Module):
         x = self.norm1(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         x1 = x
-        outs.append(x)
 
         # stage 2
         x, x_proj_out = self.patch_embed2(x)
@@ -269,8 +264,6 @@ class VisionTransformer(nn.Module):
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         x2 = x
 
-        outs.append(x)
-
         # stage 3
         x, x_proj_out = self.patch_embed3(x)
         _, _, H, W = x_proj_out.shape
@@ -279,8 +272,6 @@ class VisionTransformer(nn.Module):
         x = self.norm3(x)
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         x3 = x
-
-        outs.append(x)
 
         # stage 4
         x, x_proj_out = self.patch_embed4(x)
@@ -291,10 +282,7 @@ class VisionTransformer(nn.Module):
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         x4 = x
 
-        outs.append(x)
-
-        return (x1, x2, x3, x4) # outs
-
+        return (x1, x2, x3, x4)
 
 class DWConv(nn.Module):
     def __init__(self, dim=768):
@@ -360,7 +348,8 @@ class mit_b4(VisionTransformer):
         super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 8, 27, 3], sr_ratios=[8, 4, 2, 1],
-            drop_path_rate=0.1)
+            # drop_path_rate=0.1,
+        )
 
 
 # class mit_b5(VisionTransformer):
@@ -368,7 +357,8 @@ class mit_b4(VisionTransformer):
 #         super().__init__(
 #             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
 #             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 6, 40, 3], sr_ratios=[8, 4, 2, 1],
-#             drop_path_rate=0.1)
+#             drop_path_rate=0.1
+#         )
 
 
 class MLP(nn.Module):
@@ -405,13 +395,11 @@ class ConvModule(nn.Module):
             bias=False,
         )
         self.bn = nn.BatchNorm2d(out_channels)
-
-        self.activate = nn.ReLU(inplace=True)
+        self.activate = nn.ReLU()
 
     def forward(self, x):
         x = self.conv(x)
-        x = self.bn(x)
-        x = self.activate(x)
+        x = self.activate(self.bn(x))
         return x
 
 
@@ -425,12 +413,12 @@ class SegFormerHead(nn.Module):
         # for b1 -- embedding_dim == 256
         # for b2 -- embedding_dim == 768
 
-        self.feature_strides = [4, 8, 16, 32]
+        # self.feature_strides = [4, 8, 16, 32]
         self.in_channels = [64, 128, 320, 512]
         self.num_classes = 150  # for ADE20K dataset
 
         self.conv_seg = nn.Conv2d(128, self.num_classes, kernel_size=1)
-        self.dropout = nn.Dropout2d(0.1)
+        # self.dropout = nn.Dropout2d(0.1)
         (
             c1_in_channels,
             c2_in_channels,
@@ -453,8 +441,7 @@ class SegFormerHead(nn.Module):
 
         self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
 
-    # def forward(self, inputs: List[torch.Tensor]):
-    def forward(self, inputs: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
+    def forward(self, inputs: FEATURE_RESULT_TYPE):
 
         # len(inputs) --  4
         # inputs:  0  ---  ([1, 64, 128, 128])
@@ -463,7 +450,12 @@ class SegFormerHead(nn.Module):
         # inputs:  3  ---  ([1, 512, 16, 16])
 
         x = inputs  # len=4, 1/4,1/8,1/16,1/32
-        c1, c2, c3, c4 = x
+        # c1, c2, c3, c4 = x # onnx not happy
+        c1 = x[0]
+        c2 = x[1]
+        c3 = x[2]
+        c4 = x[3]
+
         # c1, c2, c3, c4:
         # ([1, 64, 128, 128])
         # ([1, 128, 64, 64])
@@ -489,7 +481,7 @@ class SegFormerHead(nn.Module):
         _c1 = self.linear_c1(c1).reshape(n, -1, c1.shape[2], c1.shape[3])
 
         _c = self.linear_fuse(torch.cat([_c4, _c3, _c2, _c1], dim=1))
-        x = self.dropout(_c)
+        x = _c # self.dropout(_c)
 
         x = self.linear_pred(x)
 
@@ -528,15 +520,12 @@ class SegmentModel(nn.Module):
         #     x = x.half()
 
         B, C, H, W = x.shape
-
-        # normalize first
-        x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-
         # x.size() -- ([1, 3, 960, 1280])
         r_pad = (self.MAX_TIMES - (W % self.MAX_TIMES)) % self.MAX_TIMES
         b_pad = (self.MAX_TIMES - (H % self.MAX_TIMES)) % self.MAX_TIMES
         x = F.pad(x, (0, r_pad, 0, b_pad), mode="replicate")
 
+        x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
         f = self.backbone(x)
         seg_logit = self.decode_head(f)
@@ -547,7 +536,6 @@ class SegmentModel(nn.Module):
         #     ([1, 512, 30, 40]))
         # seg_logit.size() -- ([1, 150, 240, 320])
 
-
         seg_logit = F.interpolate(seg_logit, size=(H,W), mode="bilinear", align_corners=False)
         seg_logit = F.softmax(seg_logit, dim=1)
 
@@ -556,4 +544,4 @@ class SegmentModel(nn.Module):
 
         mask = mask[:, :, 0:H, 0:W]
 
-        return mask.clamp(0, self.num_classes).float() # ADE20K class number is 150
+        return mask.clamp(0, self.num_classes) # ADE20K class number is 150

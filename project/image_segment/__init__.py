@@ -15,8 +15,6 @@ import os
 from tqdm import tqdm
 import torch
 import numpy as np
-
-import redos
 import todos
 
 from . import segment
@@ -24,15 +22,12 @@ from . import ade20k
 
 import pdb
 
-def get_tvm_model():
-    """
-    TVM model base on torch.jit.trace, that's why we construct it from DeepGuidedFilterAdvanced
-    """
+def get_trace_model():
     model = segment.SegmentModel()
     device = todos.model.get_device()
     model = model.to(device)
     model.eval()
-    print(f"Running tvm model model on {device} ...")
+    print(f"Running trace model on {device} ...")
 
     return model, device
 
@@ -47,20 +42,18 @@ def get_segment_model():
     model.eval()
 
     print(f"Running on {device} ...")
-    # if 'cpu' in str(device.type):
-    #     model.float()
 
-    # # make sure model good for C/C++
-    # model = torch.jit.script(model)
-    # # https://github.com/pytorch/pytorch/issues/52286
-    # torch._C._jit_set_profiling_executor(False)
-    # # C++ Reference
-    # # torch::jit::getProfilingMode() = false;                                                                                                             
-    # # torch::jit::setTensorExprFuserEnabled(false);
+    # make sure model good for C/C++
+    model = torch.jit.script(model)
+    # https://github.com/pytorch/pytorch/issues/52286
+    torch._C._jit_set_profiling_executor(False)
+    # C++ Reference
+    # torch::jit::getProfilingMode() = false;                                                                                                             
+    # torch::jit::setTensorExprFuserEnabled(false);
 
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_segment.torch"):
-    #     model.save("output/image_segment.torch")
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_segment.torch"):
+        model.save("output/image_segment.torch")
 
     return model, device
 
