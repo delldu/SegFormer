@@ -22,7 +22,7 @@ ggml_tensor_t* ggml_nn_grid_y(ggml_context_t *ctx, ggml_tensor_t *x, int h);
 ggml_tensor_t* ggml_nn_grid_x(ggml_context_t *ctx, ggml_tensor_t *x, int w);
 ggml_tensor_t* ggml_nn_arange(ggml_context_t *ctx, ggml_tensor_t *x);
 ggml_tensor_t* ggml_nn_relu6(ggml_context_t *ctx, ggml_tensor_t *x);
-
+ggml_tensor_t* ggml_nn_reshape(ggml_context_t *ctx, ggml_tensor_t *x, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3);
 
 // ----------------------------------------------------------------------------------------------------------------------------------------
 // https://pytorch.org/docs/stable/generated/torch.nn.Identity.html
@@ -916,6 +916,30 @@ ggml_tensor_t* ggml_nn_relu6(ggml_context_t *ctx, ggml_tensor_t *x)
 {
     // x = ggml_relu(ctx, x);
     return ggml_clamp(ctx, x, 0.0, 6.0);
+}
+
+
+ggml_tensor_t* ggml_nn_reshape(ggml_context_t *ctx, ggml_tensor_t *x, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3)
+{
+    if (ne0 > 0 && ne1 > 0 && ne2 > 0 && ne3 > 0) {
+        return ggml_reshape_4d(ctx, x, ne0, ne1, ne2, ne3);
+    }
+
+    int neg_dim = -1;
+    int64_t pos_ne = 1;
+    int64_t dims[4] = { ne0, ne1, ne2, ne3 };
+    for (int i = 0; i < 4; i++) {
+        if (dims[i] > 0) {
+            pos_ne *= dims[i];
+        } else {
+            neg_dim = i;
+        }
+    }
+    pos_ne = ggml_nelements(x)/pos_ne;
+    GGML_ASSERT(neg_dim >= 0 && neg_dim < 4);
+    dims[neg_dim] = pos_ne;
+
+    return ggml_reshape_4d(ctx, x, dims[0], dims[1], dims[2], dims[3]);
 }
 
 #endif // GGML_NN_IMPLEMENTATION

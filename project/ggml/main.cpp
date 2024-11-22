@@ -26,7 +26,7 @@ int image_segment_predict(SegmentModel *net, char *input_filename, char *output_
     TENSOR *argv[1];
 
     printf("Matte %s to %s ...\n", input_filename, output_filename);
-    TENSOR *input_tensor = tensor_load_image(input_filename, 1 /*alpha*/);
+    TENSOR *input_tensor = tensor_load_image(input_filename, 0 /*alpha*/);
     check_tensor(input_tensor);
 
     argv[0] = input_tensor ;

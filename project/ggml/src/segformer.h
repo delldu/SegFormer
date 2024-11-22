@@ -492,9 +492,58 @@ struct Attention {
     }
 
     struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int H, int W) {
-    	// please implement forward by your self, please !!!
-        // xxxx_debug
-    	return x;
+        // B, HW, C = x.size()
+        // assert HW == H*W
+
+        // q = self.q(x).reshape(B, HW, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        // if self.sr_ratio > 1:
+        //     x = x.permute(0, 2, 1).reshape(B, C, H, W)
+        //     x = self.sr(x).reshape(B, C, -1).permute(0, 2, 1)
+        //     x = self.norm(x)
+
+        // kv = self.kv(x).reshape(B, -1, self.num_heads, C// self.num_heads).permute(0, 2, 1, 3)
+        // N2 = kv.size(2)
+        // k = kv[:, :, 0:N2:2, :]
+        // v = kv[:, :, 1:N2:2,  :]
+
+        // attn = (q @ k.transpose(-2, -1)) * self.scale
+        // attn = attn.softmax(dim=-1)
+        // x = (attn @ v).transpose(1, 2).reshape(B, HW, C)
+
+        // x = self.proj(x)
+
+        // return x
+        int B = (int) x->ne[2];
+        int HW = (int) x->ne[1];
+        int C = (int) x->ne[0];
+        ggml_tensor_t *q_x = q.forward(ctx, x);
+        q_x = ggml_reshape_4d(ctx, q_x, C/num_heads, num_heads, HW, B);
+        q_x = ggml_cont(ctx, ggml_permute(ctx, q_x, 0, 2, 1, 3));
+
+        if (sr_ratio > 1) {
+            x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
+            x = ggml_reshape_4d(ctx, x, W, H, C, B);
+            x = sr.forward(ctx, x);
+            x = ggml_nn_reshape(ctx, x, 1, -1, C, B);
+            x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
+        }
+        ggml_tensor_t *kv_x = kv.forward(ctx, x);
+        kv_x = ggml_nn_reshape(ctx, kv_x, C/num_heads, num_heads, -1, B);
+        int N2 = (int)kv_x->ne[1]; // dim 1
+        ggml_tensor_t *k_x = ggml_nn_slice(ctx, kv_x, 1 /*dim*/, 0, N2, 2/*step*/);
+        ggml_tensor_t *v_x = ggml_nn_slice(ctx, kv_x, 1 /*dim*/, 1, N2, 2/*step*/);
+
+        ggml_tensor_t *attn = ggml_mul_mat(ctx, q_x, ggml_transpose(ctx, k_x));
+        attn = ggml_scale(ctx, attn, scale);
+        attn = ggml_soft_max(ctx, attn);
+
+        x = ggml_mul_mat(ctx, attn, v_x);
+        x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
+        x = ggml_reshape_3d(ctx, x, C, HW, C);
+
+        x = proj.forward(ctx, x);
+
+        return x;
     }
 };
 
@@ -927,19 +976,34 @@ struct SegmentModel : GGMLNetwork {
 
         int r_pad = (MAX_TIMES - (W % MAX_TIMES)) % MAX_TIMES;
         int b_pad = (MAX_TIMES - (H % MAX_TIMES)) % MAX_TIMES;
-
+        ggml_tensor_dump("x1", x);
         x = ggml_replication_pad2d(ctx, x, 0, r_pad, 0, b_pad);
+        ggml_tensor_dump("x2", x);
 
         x = normalize.forward(ctx, x);
+        ggml_tensor_dump("x3", x);
+
         std::vector<ggml_tensor_t *>xlist = backbone.forward(ctx, x);
+        ggml_tensor_dump("xlist1", xlist[0]);
+        ggml_tensor_dump("xlist2", xlist[1]);
+        ggml_tensor_dump("xlist3", xlist[2]);
+        ggml_tensor_dump("xlist4", xlist[3]);
+
         ggml_tensor_t *seg_logit = decode_head.forward(ctx, xlist);
+        ggml_tensor_dump("seg_logit1", seg_logit);
 
         seg_logit = ggml_interpolate(ctx, seg_logit, 1, H);  
         seg_logit = ggml_interpolate(ctx, seg_logit, 0, W); 
+        ggml_tensor_dump("seg_logit2", seg_logit);
+
         seg_logit = ggml_soft_max(ctx, seg_logit);
+        ggml_tensor_dump("seg_logit3", seg_logit);
 
         ggml_tensor_t *mask = ggml_argmax(ctx, seg_logit);
+        ggml_tensor_dump("mask1", mask);
+
         mask = ggml_clamp(ctx, mask, 0.0, (float)num_classes);
+        ggml_tensor_dump("mask2", mask);
 
         return mask;
     }
