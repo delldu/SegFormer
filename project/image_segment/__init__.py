@@ -74,6 +74,7 @@ def blender_segment(input_tensor, output_tensor):
 
 def model_forward(model, device, input_tensor):
     output_tensor = todos.model.forward(model, device, input_tensor)
+    output_tensor = output_tensor.to(torch.int64)
     final_tensor = blender_segment(input_tensor.cpu(), output_tensor.cpu())
 
     return final_tensor

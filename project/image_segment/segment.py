@@ -30,6 +30,15 @@ class Mlp(nn.Module):
         self.dwconv = DWConv(hidden_features)
         self.act = act_layer()
         self.fc2 = nn.Linear(hidden_features, out_features)
+        # print(self)
+        # Mlp(
+        #   (fc1): Linear(in_features=320, out_features=1280, bias=True)
+        #   (dwconv): DWConv(
+        #     (dwconv): Conv2d(1280, 1280, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), groups=1280)
+        #   )
+        #   (act): GELU(approximate='none')
+        #   (fc2): Linear(in_features=1280, out_features=320, bias=True)
+        # )
 
     def forward(self, x, H: int, W: int):
         x = self.fc1(x)
@@ -59,6 +68,14 @@ class Attention(nn.Module):
         else:  # Support torch.jit.script
             self.sr = nn.Identity()
             self.norm = nn.Identity()
+        # print(self)
+        # Attention(
+        #   (q): Linear(in_features=320, out_features=320, bias=True)
+        #   (kv): Linear(in_features=320, out_features=640, bias=True)
+        #   (proj): Linear(in_features=320, out_features=320, bias=True)
+        #   (sr): Conv2d(320, 320, kernel_size=(2, 2), stride=(2, 2))
+        #   (norm): LayerNorm((320,), eps=1e-05, elementwise_affine=True)
+        # )
 
     def forward(self, x, H: int, W: int):
         B, N, C = x.shape
@@ -117,6 +134,23 @@ class OverlapPatchEmbed(nn.Module):
             padding=(patch_size[0] // 2, patch_size[1] // 2),
         )
         self.norm = nn.LayerNorm(embed_dim)
+        # print(self)
+        # OverlapPatchEmbed(
+        #   (proj): Conv2d(3, 64, kernel_size=(7, 7), stride=(4, 4), padding=(3, 3))
+        #   (norm): LayerNorm((64,), eps=1e-05, elementwise_affine=True)
+        # )
+        # OverlapPatchEmbed(
+        #   (proj): Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        #   (norm): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+        # )
+        # OverlapPatchEmbed(
+        #   (proj): Conv2d(128, 320, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        #   (norm): LayerNorm((320,), eps=1e-05, elementwise_affine=True)
+        # )
+        # OverlapPatchEmbed(
+        #   (proj): Conv2d(320, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        #   (norm): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+        # )
 
     def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.proj(x)
@@ -333,8 +367,6 @@ class mit_b4(VisionTransformer):
 #             norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 6, 40, 3], sr_ratios=[8, 4, 2, 1],
 #             drop_path_rate=0.1
 #         )
-
-
 class MLP(nn.Module):
     """
     Linear Embedding
@@ -342,6 +374,19 @@ class MLP(nn.Module):
     def __init__(self, input_dim=2048, embed_dim=768):
         super().__init__()
         self.proj = nn.Linear(input_dim, embed_dim)
+        # print(self)
+        # MLP(
+        #   (proj): Linear(in_features=512, out_features=768, bias=True)
+        # )
+        # MLP(
+        #   (proj): Linear(in_features=320, out_features=768, bias=True)
+        # )
+        # MLP(
+        #   (proj): Linear(in_features=128, out_features=768, bias=True)
+        # )
+        # MLP(
+        #   (proj): Linear(in_features=64, out_features=768, bias=True)
+        # )
 
     def forward(self, x):
         x = x.flatten(2).transpose(1, 2)
@@ -460,9 +505,10 @@ class SegmentModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.MAX_H = 1024
-        self.MAX_W = 1024
+        self.MAX_W = 2048
         self.MAX_TIMES = 4
-        # GPU half model -- 4G, 120ms
+        # GPU 1024x1024 -- 4G, 120ms
+        # GPU 1024x2048 -- 7.6G, 640ms
 
         self.backbone = mit_b4()
         self.decode_head = SegFormerHead(self.backbone.embedding_dim)
@@ -506,5 +552,7 @@ class SegmentModel(nn.Module):
         # mask.dtype -- int64, size() -- [1, 1, 960, 1280]
 
         mask = mask[:, :, 0:H, 0:W]
+        mask = mask.clamp(0, self.num_classes).to(torch.float32)
+        # ADE20K class number is 150, to float32 is for onnx export
 
-        return mask.clamp(0, self.num_classes) # ADE20K class number is 150
+        return mask
