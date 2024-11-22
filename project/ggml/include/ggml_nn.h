@@ -935,9 +935,16 @@ ggml_tensor_t* ggml_nn_reshape(ggml_context_t *ctx, ggml_tensor_t *x, int64_t ne
             neg_dim = i;
         }
     }
+    // CheckPoint("pos_ne = %ld, neg_dim = %d", pos_ne, neg_dim);
     pos_ne = ggml_nelements(x)/pos_ne;
+    // CheckPoint("==> pos_ne = %ld, neg_dim = %d", pos_ne, neg_dim);
+
     GGML_ASSERT(neg_dim >= 0 && neg_dim < 4);
     dims[neg_dim] = pos_ne;
+
+    // for (int i = 0; i < 4; i++) {
+    //     CheckPoint("dims[%d] = %ld", i, dims[i]);
+    // }
 
     return ggml_reshape_4d(ctx, x, dims[0], dims[1], dims[2], dims[3]);
 }
