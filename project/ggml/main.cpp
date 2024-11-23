@@ -20,33 +20,7 @@
 #define DEFAULT_DEVICE 1
 #define DEFAULT_OUTPUT "output"
 
-
-int image_segment_predict(SegmentModel *net, char *input_filename, char *output_filename)
-{
-    TENSOR *argv[1];
-
-    printf("Matte %s to %s ...\n", input_filename, output_filename);
-    TENSOR *input_tensor = tensor_load_image(input_filename, 0 /*alpha*/);
-    check_tensor(input_tensor);
-
-    argv[0] = input_tensor ;
-    TENSOR *output_tensor = net->engine_forward(ARRAY_SIZE(argv), argv);
-
-    // TENSOR *xxxx_test = net->get_output_tensor("images");
-    // if (tensor_valid(xxxx_test)) {
-    //     tensor_show("********************** images", xxxx_test);
-    //     tensor_destroy(xxxx_test);
-    // }
-    if (tensor_valid(output_tensor)) {
-        // tensor_show("---- output_tensor", output_tensor);
-        tensor_saveas_image(output_tensor, 0 /*batch*/, output_filename);
-        tensor_destroy(output_tensor);
-    }
-    tensor_destroy(input_tensor);
-
-    return RET_OK;
-}
-
+int image_segment_predict(SegmentModel *net, char *input_filename, char *output_filename);
 
 static void image_matte_help(char* cmd)
 {
@@ -98,13 +72,11 @@ int main(int argc, char** argv)
     if (optind == argc) // no input image, nothing to do ...
         return 0;
 
-    // ISNetDIS net;
     SegmentModel net;
 
     // load net weight ...
     GGMLModel model;
     {
-        // check_point(model.preload("models/image_netdis_f32.gguf") == RET_OK);
         check_point(model.preload("models/image_segment_f32.gguf") == RET_OK);
 
         // -----------------------------------------------------------------------------------------
