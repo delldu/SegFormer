@@ -13,7 +13,7 @@
   (bn): BatchNorm2d(768, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
   (activate): ReLU()
 ) */
-// -----------------------------------------------------------------------
+// !!!-----------------------------------------------------------------------
 struct ConvModule {
     // network hparams
     
@@ -45,10 +45,10 @@ struct ConvModule {
         bn.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x) {
         x = conv.forward(ctx, x);
         x = bn.forward(ctx, x);
-        x = ggml_relu_inplace(ctx, x);
+        x = ggml_relu(ctx, x);
 
         return x;
     }
@@ -58,7 +58,7 @@ struct ConvModule {
  MLP(
   (proj): Linear(in_features=512, out_features=768, bias=True)
 ) */
-// -----------------------------------------------------------------------------------
+// !!!-----------------------------------------------------------------------------------
 struct MLP {
     int input_dim = 512;
     
@@ -120,7 +120,7 @@ struct MLP {
   (linear_pred): Conv2d(768, 150, kernel_size=(1, 1), stride=(1, 1))
 ) */
 
-// -------------------------------------------------------------------------
+// !!!-------------------------------------------------------------------------
 struct SegFormerHead {
     // network hparams
     int num_classes = 150;
@@ -192,7 +192,7 @@ struct SegFormerHead {
         linear_pred.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, std::vector<ggml_tensor_t *> xlist) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, std::vector<ggml_tensor_t *> xlist) {
         // # inputs is tuple: len = 4
         // #     tensor [item] size: [1, 64, 240, 320], min: -4.25842, max: 4.218358, mean: 0.014021
         // #     tensor [item] size: [1, 128, 120, 160], min: -6.090078, max: 4.901278, mean: 0.02357
@@ -289,7 +289,7 @@ struct SegFormerHead {
   (dwconv): Conv2d(2048, 2048, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), groups=2048)
 ) */
 
-// -----------------------------------------------------------------------------------------
+// !!!-----------------------------------------------------------------------------------------
 struct DWConv {
     int dim = 768;
 
@@ -315,7 +315,7 @@ struct DWConv {
         dwconv.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int H, int W) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, int H, int W) {
         // B, N, C = x.shape
         // x = x.transpose(1, 2).view(B, C, H, W)
         // x = self.dwconv(x)
@@ -326,13 +326,14 @@ struct DWConv {
         // int N = (int)x->ne[1];
         int C = (int)x->ne[0];
         x = ggml_cont(ctx, ggml_permute(ctx, x, 1, 0, 2, 3)); // [C, HW, B] -> [HW, C, B]
-        x = ggml_reshape_4d(ctx, x, W, H, C, B);
+        x = ggml_cont(ctx, ggml_reshape_4d(ctx, x, W, H, C, B));
         x = dwconv.forward(ctx, x);
+        x = ggml_cont(ctx, x);
         W = (int)x->ne[0];
         H = (int)x->ne[1];
         C = (int)x->ne[2];
         B = (int)x->ne[3];
-        x = ggml_reshape_3d(ctx, x, W*H, C, B);
+        x = ggml_cont(ctx, ggml_reshape_3d(ctx, x, W*H, C, B));
         x = ggml_cont(ctx, ggml_permute(ctx, x, 1, 0, 2, 3)); // [HW, C, B] -> [C, HW, B]
 
         // Info: ********************** BlockMlp Tensor: 1x1x960x2048
@@ -353,7 +354,7 @@ struct DWConv {
   (fc2): Linear(in_features=2048, out_features=512, bias=True)
 ) */
 
-// --------------------------------------------------------------------------------
+// !!!--------------------------------------------------------------------------------
 struct BlockMlp {
     int in_features;
     int hidden_features;
@@ -389,7 +390,7 @@ struct BlockMlp {
         fc2.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int H, int W) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, int H, int W) {
         // x = self.fc1(x)
         // x = self.dwconv(x, H, W)
         // x = self.act(x)
@@ -418,7 +419,7 @@ struct BlockMlp {
   (sr): Identity()
   (norm): Identity()
 ) */
-// -------------------------------------------------------------------------------
+// !!! -------------------------------------------------------------------------------
 struct Attention {
     // network hparams
     int dim = 512;
@@ -454,8 +455,6 @@ struct Attention {
         if (sr_ratio > 1) {
             sr.in_channels = dim;
             sr.out_channels = dim;
-
-            // Fixed defaults ...
             sr.kernel_size = { sr_ratio, sr_ratio };
             sr.stride = { sr_ratio, sr_ratio };
             // sr.padding = { 0, 0 };
@@ -490,14 +489,17 @@ struct Attention {
         }
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int H, int W) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, int H, int W) {
+        // x -- [C, HW, B]
         int B = (int) x->ne[2];
         int HW = (int) x->ne[1];
         int C = (int) x->ne[0];
+        GGML_ASSERT(HW == H*W);
 
         ggml_tensor_t *q_x = q.forward(ctx, x);
         q_x = ggml_reshape_4d(ctx, q_x, C/num_heads, num_heads, HW, B);
         q_x = ggml_cont(ctx, ggml_permute(ctx, q_x, 0, 2, 1, 3));
+        // [C/num_heads, num_heads, HW, B] -> [C//num_heads, HW, num_heads, B]
 
         if (sr_ratio > 1) {
             x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
@@ -505,7 +507,6 @@ struct Attention {
 
             x = sr.forward(ctx, x);
             x = ggml_nn_reshape(ctx, x, 1, -1, C, B);
-            // x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
             x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 1, 0, 3));
             x = norm.forward(ctx, x);
         }
@@ -518,7 +519,7 @@ struct Attention {
         ggml_tensor_t *v_x = ggml_nn_slice(ctx, kv_x, 1 /*dim*/, 1, N2, 2/*step*/);
 
         ggml_tensor_t *attn = ggml_nn_mul_mat(ctx, q_x, ggml_transpose(ctx, k_x));
-        attn = ggml_scale_inplace(ctx, attn, scale);
+        attn = ggml_scale(ctx, attn, scale);
 
         // attn = attn.softmax(dim=-1)
         attn = ggml_soft_max(ctx, attn);
@@ -529,8 +530,9 @@ struct Attention {
         x = ggml_reshape_3d(ctx, x, C, HW, B);
 
         x = proj.forward(ctx, x);
+        GGML_ASSERT(C == (int)x->ne[0] && HW == (int)x->ne[1] && B == x->ne[2]);
 
-        return x;
+        return x; // [C, HW, B]
     }
 };
 
@@ -578,38 +580,30 @@ struct Block {
         mlp.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int H, int W) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, int H, int W) {
         // x = x + self.attn(self.norm1(x), H, W) 
         // x = x + self.mlp(self.norm2(x), H, W)
         // return x
-        ggml_tensor_t *t = norm1.forward(ctx, x);
-        t = attn.forward(ctx, t, H, W);
-        t = ggml_cont(ctx, t);
-        x = ggml_add(ctx, x, t);
 
-        x = ggml_cont(ctx, x);
-        ggml_set_name(x, "BlockMlp");
-        ggml_set_output(x);
+        // x -- [C, HW, B]
+        int B = (int) x->ne[2];
+        int HW = (int) x->ne[1];
+        int C = (int) x->ne[0];
 
-        // Info: ********************** BlockMlp Tensor: 1x1x61440x64
-        // min: -0.0563, max: 1.0653, mean: 0.5021
-        // tensor [mlp] size: [1, 61440, 64], min: -0.207806, max: 1.259995, mean: 0.504563
-        // tensor [mlp] size: [1, 61440, 64], min: -0.210964, max: 1.159565, mean: 0.499687
-        // tensor [mlp] size: [1, 61440, 64], min: -0.306256, max: 1.097413, mean: 0.500982
+        // x --- [C, HW, B]
+        ggml_tensor_t *n;
+        n = norm1.forward(ctx, x);
+        n = attn.forward(ctx, n, H, W);
+        x = ggml_add(ctx, x, n);
+        // -----------------------------
+        n = norm2.forward(ctx, x);
+        n = mlp.forward(ctx, n, H, W);
+        x = ggml_add(ctx, x, n);
 
+        // x --- [C, HW, B]
+        GGML_ASSERT(C == (int)x->ne[0] && HW == (int)x->ne[1] && B == x->ne[2]);
 
-        t = norm2.forward(ctx, x);
-        t = mlp.forward(ctx, t, H, W);
-        x = ggml_add(ctx, x, t);
-
-
-        // Info: ********************** BlockMlp Tensor: 1x1x61440x64
-        // min: -3.7193, max: 1.9403, mean: 0.4776
-        // tensor [mlp] size: [1, 61440, 64], min: -0.267228, max: 1.313513, mean: 0.506966
-        // tensor [mlp] size: [1, 61440, 64], min: -0.903861, max: 1.422601, mean: 0.498844
-        // tensor [mlp] size: [1, 61440, 64], min: -4.363128, max: 1.840224, mean: 0.473661
-
-    	return x;
+        return x;
     }
 };
 
@@ -623,7 +617,7 @@ struct Block {
 struct OverlapPatchEmbed {
     // network hparams
     int in_chans = 3;
-    int embed_dim = 512;
+    int embed_dim = 768;
     int stride = 4;
     int patch_size = 7;
 
@@ -637,8 +631,8 @@ struct OverlapPatchEmbed {
         proj.stride = { stride, stride };
         proj.padding = { patch_size/2, patch_size/2 };
         // proj.dilation = { 1, 1 };
-        proj.is_depthwise = false;
-        proj.has_bias = true;
+        // proj.is_depthwise = false;
+        // proj.has_bias = true;
         proj.create_weight_tensors(ctx);
 
         norm.normalized_shape = embed_dim;
@@ -655,20 +649,21 @@ struct OverlapPatchEmbed {
         norm.setup_weight_names(s);
     }
 
-    struct ggml_tensor* forward(struct ggml_context* ctx, struct ggml_tensor* x, int *H, int *W) {
+    ggml_tensor_t* forward(struct ggml_context* ctx, ggml_tensor_t* x, int *H, int *W) {
         // x = self.proj(x)
         // proj_out = x
         // x = x.flatten(2).transpose(1, 2) # (B, C, HW) -> (B, HW, C)
         // x = self.norm(x)
         // return (x, proj_out)
         x = proj.forward(ctx, x);
+
         *W = (int)x->ne[0];
         *H = (int)x->ne[1];
         int C = (int)x->ne[2];
         int B = (int)x->ne[3];
-        x = ggml_reshape_3d(ctx, x, (*W)*(*H), C, B);
+        x = ggml_cont(ctx, ggml_reshape_3d(ctx, x, (*W)*(*H), C, B));
         x = ggml_cont(ctx, ggml_permute(ctx, x, 1, 0, 2, 3)); // (HW, C, B) -> (C, HW, B)
-        x = norm.forward(ctx, x);
+        x = norm.forward(ctx, x); // [1, 3840, 320]
 
         // Info: ********************** BlockMlp Tensor: 1x1x61440x64
         // min: -0.8813, max: 0.9750, mean: -0.0165
@@ -745,6 +740,7 @@ struct VisionTransformer {
         }
         // block1.create_weight_tensors(ctx);
         norm1.normalized_shape = embed_dims[0];
+        norm1.eps = 1e-6;
         norm1.create_weight_tensors(ctx);
 
         for (int i = 0; i < 8; i++) {
@@ -756,6 +752,7 @@ struct VisionTransformer {
         }
         // block2.create_weight_tensors(ctx);
         norm2.normalized_shape = embed_dims[1];
+        norm2.eps = 1e-6;
         norm2.create_weight_tensors(ctx);
 
         for (int i = 0; i < 27; i++) {
@@ -767,6 +764,7 @@ struct VisionTransformer {
         }
         // block3.create_weight_tensors(ctx);
         norm3.normalized_shape = embed_dims[2];
+        norm3.eps = 1e-6;
         norm3.create_weight_tensors(ctx);
 
         for (int i = 0; i < 3; i++) {
@@ -778,6 +776,7 @@ struct VisionTransformer {
         }
         // block4.create_weight_tensors(ctx);
         norm4.normalized_shape = embed_dims[3];
+        norm4.eps = 1e-6;
         norm4.create_weight_tensors(ctx);
     }
 
@@ -822,9 +821,8 @@ struct VisionTransformer {
         norm4.setup_weight_names(s);
     }
 
-    std::vector<struct ggml_tensor*> forward(struct ggml_context* ctx, struct ggml_tensor* x) {
-        std::vector<struct ggml_tensor*> xlist;
-
+    std::vector<ggml_tensor_t *> forward(struct ggml_context* ctx, ggml_tensor_t* x) {
+        std::vector<ggml_tensor_t *> xlist;
         // B = x.shape[0]
 
         // # stage 1
@@ -841,13 +839,35 @@ struct VisionTransformer {
         // x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         // x1 = x
         x = patch_embed1.forward(ctx, x, &H, &W);
+        // Info: x Tensor: 1x1x61440x64
+        // min: -2.7436, max: 2.4490, mean: -0.0188
+        // tensor [>x] size: [1, 61440, 64], min: -2.743275, max: 2.450053, mean: -0.018798
+        // --------------------------------------------------------------------
         for (int i = 0; i < 3; i++) {
             x = block1[i].forward(ctx, x, H, W);
         }
+        x = ggml_cont(ctx, x);
+        ggml_set_name(x, ">x");
+        ggml_set_output(x);
+        // Info: >x Tensor: 1x1x61440x64
+        // min: -6.3785, max: 3.5127, mean: -0.0360
+        // tensor [>x] size: [1, 61440, 64], min: -5.960706, max: 3.477771, mean: -0.034079
+
         x = norm1.forward(ctx, x);
-        x = ggml_nn_reshape(ctx, x, -1, W, H, B);
+        C = ggml_nelements(x)/W/H/B;
+        GGML_ASSERT(C == (int)x->ne[0]);
+        x = ggml_reshape_4d(ctx, x, C, W, H, B);
         x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 0, 1, 3)); // [C, W, H, B] -> [W, H, C, B]
-        xlist.push_back(x);
+
+        ggml_tensor_t *x1 = x;
+
+        x1 = ggml_cont(ctx, x1);
+        ggml_set_name(x1, "x1");
+        ggml_set_output(x1);
+
+
+
+        xlist.push_back(x1);
 
         // # stage 2
         // x, x_proj_out = self.patch_embed2(x)
@@ -862,9 +882,17 @@ struct VisionTransformer {
             x = block2[i].forward(ctx, x, H, W);
         }
         x = norm2.forward(ctx, x);
-        x = ggml_nn_reshape(ctx, x, -1, W, H, B);
+        C = ggml_nelements(x)/W/H/B;
+        GGML_ASSERT(C == (int)x->ne[0]);
+        x = ggml_reshape_4d(ctx, x, C, W, H, B);
         x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 0, 1, 3)); // [C, W, H, B] -> [W, H, C, B]
-        xlist.push_back(x);
+        ggml_tensor_t *x2 = x;
+
+        x2 = ggml_cont(ctx, x2);
+        ggml_set_name(x2, "x2");
+        ggml_set_output(x2);
+
+        xlist.push_back(x2);
 
         // # stage 3
         // x, x_proj_out = self.patch_embed3(x)
@@ -879,9 +907,18 @@ struct VisionTransformer {
             x = block3[i].forward(ctx, x, H, W);
         }
         x = norm3.forward(ctx, x);
-        x = ggml_nn_reshape(ctx, x, -1, W, H, B);
+        C = ggml_nelements(x)/W/H/B;
+        GGML_ASSERT(C == (int)x->ne[0]);
+        x = ggml_reshape_4d(ctx, x, C, W, H, B);
         x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 0, 1, 3)); // [C, W, H, B] -> [W, H, C, B]
-        xlist.push_back(x);
+
+        ggml_tensor_t *x3 = x;
+
+        x3 = ggml_cont(ctx, x3);
+        ggml_set_name(x3, "x3");
+        ggml_set_output(x3);
+
+        xlist.push_back(x3);
 
         // # stage 4
         // x, x_proj_out = self.patch_embed4(x)
@@ -896,10 +933,44 @@ struct VisionTransformer {
         for (int i = 0; i < 3; i++) {
             x = block4[i].forward(ctx, x, H, W);
         }
-        x = norm4.forward(ctx, x);
-        x = ggml_nn_reshape(ctx, x, -1, W, H, B);
+        x = norm4.forward(ctx, x); // (C, HW, B)
+        C = ggml_nelements(x)/W/H/B;
+        GGML_ASSERT(C == (int)x->ne[0]);
+        x = ggml_nn_reshape(ctx, x, C, W, H, B);
         x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 0, 1, 3)); // [C, W, H, B] -> [W, H, C, B]
-        xlist.push_back(x);
+
+        ggml_tensor_t *x4 = x;
+
+        x4 = ggml_cont(ctx, x4);
+        ggml_set_name(x4, "x4");
+        ggml_set_output(x4);
+
+        xlist.push_back(x4);
+
+        printf("------------------------------------\n");
+
+        // # tensor [>x] size: [1, 3, 960, 1024], min: -2.117904, max: 2.64, mean: 0.034037
+        // # tensor [x1] size: [1, 64, 240, 256], min: -4.195707, max: 4.108228, mean: 0.012766
+        // # tensor [x2] size: [1, 128, 120, 128], min: -6.148735, max: 5.365499, mean: 0.023484
+        // # tensor [x3] size: [1, 320, 60, 64], min: -5.416265, max: 4.744856, mean: -0.002299
+        // # tensor [x4] size: [1, 512, 30, 32], min: -6.56222, max: 7.764719, mean: 0.025833
+
+
+        // Info: >x Tensor: 1x3x960x1024
+        // min: -2.1179, max: 2.6400, mean: 0.0340
+
+        // Info: x1 Tensor: 1x64x240x256
+        // min: -4.1156, max: 4.0539, mean: 0.0136
+
+        // Info: x2 Tensor: 1x128x120x128
+        // min: -5.1044, max: 4.3091, mean: 0.0234
+
+        // Info: x3 Tensor: 1x320x60x64
+        // min: -4.8709, max: 4.9602, mean: -0.0027
+
+        // Info: x4 Tensor: 1x512x30x32
+        // min: -8.1879, max: 8.0512, mean: 0.0235
+
 
     	return xlist;
     }
@@ -952,42 +1023,17 @@ struct SegmentModel : GGMLNetwork {
         x = normalize.forward(ctx, x);
 
         x = ggml_cont(ctx, x);
-        ggml_set_name(x, "images");
-        ggml_set_output(x);
+        // ggml_set_name(x, "images");
+        // ggml_set_output(x);
         // tensor [images] size: [1, 3, 960, 1024], min: -2.117904, max: 2.64, mean: 0.034037
 
         std::vector<ggml_tensor_t *>xlist = backbone.forward(ctx, x);
-
-        // xlist[0] = ggml_cont(ctx, xlist[0]);
-        // ggml_set_name(xlist[0], "xlist0");
-        // ggml_set_output(xlist[0]);
-
-        // xlist[1] = ggml_cont(ctx, xlist[1]);
-        // ggml_set_name(xlist[1], "xlist1");
-        // ggml_set_output(xlist[1]);
-
-        // xlist[2] = ggml_cont(ctx, xlist[2]);
-        // ggml_set_name(xlist[2], "xlist2");
-        // ggml_set_output(xlist[2]);
-
-        // xlist[3] = ggml_cont(ctx, xlist[3]);
-        // ggml_set_name(xlist[3], "xlist3");
-        // ggml_set_output(xlist[3]);
 
         // f is tuple: len = 4
         //     tensor [item] size: [1, 64, 240, 256], min: -4.195707, max: 4.108228, mean: 0.012766
         //     tensor [item] size: [1, 128, 120, 128], min: -6.148735, max: 5.365499, mean: 0.023484
         //     tensor [item] size: [1, 320, 60, 64], min: -5.416265, max: 4.744856, mean: -0.002299
         //     tensor [item] size: [1, 512, 30, 32], min: -6.56222, max: 7.764719, mean: 0.025833
-
-        // Info: ********************** xlist0 Tensor: 1x64x240x256
-        // min: -4.1315, max: 4.0567, mean: 0.0124
-        // Info: ********************** xlist1 Tensor: 1x128x120x128
-        // min: -5.2141, max: 4.1302, mean: 0.0234
-        // Info: ********************** xlist2 Tensor: 1x320x60x64
-        // min: -4.6334, max: 4.7005, mean: -0.0092
-        // Info: ********************** xlist3 Tensor: 1x512x30x32
-        // min: -8.0066, max: 8.1684, mean: -0.1160
 
 
         ggml_tensor_t *seg_logit = decode_head.forward(ctx, xlist);

@@ -149,32 +149,35 @@ int image_segment_predict(SegmentModel *net, char *input_filename, char *output_
     check_tensor(output_tensor);
 
     tensor_show("---- output_tensor", output_tensor);
-    TENSOR *xxxx_test = net->get_output_tensor("images");
+    TENSOR *xxxx_test;
+
+    xxxx_test = net->get_output_tensor(">x");
     if (tensor_valid(xxxx_test)) {
-        tensor_show("********************** images", xxxx_test);
+        tensor_show(">x", xxxx_test);
         tensor_destroy(xxxx_test);
     }
 
-    xxxx_test = net->get_output_tensor("xlist0");
+    xxxx_test = net->get_output_tensor("x1");
     if (tensor_valid(xxxx_test)) {
-        tensor_show("********************** xlist0", xxxx_test);
+        tensor_show("x1", xxxx_test);
         tensor_destroy(xxxx_test);
     }
-    xxxx_test = net->get_output_tensor("xlist1");
+    xxxx_test = net->get_output_tensor("x2");
     if (tensor_valid(xxxx_test)) {
-        tensor_show("********************** xlist1", xxxx_test);
+        tensor_show("x2", xxxx_test);
         tensor_destroy(xxxx_test);
     }
-    xxxx_test = net->get_output_tensor("xlist2");
+    xxxx_test = net->get_output_tensor("x3");
     if (tensor_valid(xxxx_test)) {
-        tensor_show("********************** xlist2", xxxx_test);
+        tensor_show("x3", xxxx_test);
         tensor_destroy(xxxx_test);
     }
-    xxxx_test = net->get_output_tensor("xlist3");
+    xxxx_test = net->get_output_tensor("x4");
     if (tensor_valid(xxxx_test)) {
-        tensor_show("********************** xlist3", xxxx_test);
+        tensor_show("x4", xxxx_test);
         tensor_destroy(xxxx_test);
     }
+
     xxxx_test = net->get_output_tensor("seg_logit");
     if (tensor_valid(xxxx_test)) {
         tensor_show("********************** seg_logit", xxxx_test);
