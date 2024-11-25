@@ -499,35 +499,41 @@ struct Attention {
         ggml_tensor_t *q_x = q.forward(ctx, x);
         q_x = ggml_reshape_4d(ctx, q_x, C/num_heads, num_heads, HW, B);
         q_x = ggml_cont(ctx, ggml_permute(ctx, q_x, 0, 2, 1, 3));
-        // [C/num_heads, num_heads, HW, B] -> [C//num_heads, HW, num_heads, B]
+        // [C/num_heads, num_heads, HW, B] -> [C/num_heads, HW, num_heads, B]
 
         if (sr_ratio > 1) {
-            x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
+            x = ggml_cont(ctx, ggml_permute(ctx, x, 1, 0, 2, 3));
             x = ggml_reshape_4d(ctx, x, W, H, C, B);
+            // [C, HW, B] -> [HW, C, B] -> [W, H, C, B]
 
             x = sr.forward(ctx, x);
-            x = ggml_nn_reshape(ctx, x, 1, -1, C, B);
-            x = ggml_cont(ctx, ggml_permute(ctx, x, 2, 1, 0, 3));
+            x = ggml_nn_reshape(ctx, x, -1, C, B, 1);
+            x = ggml_cont(ctx, ggml_permute(ctx, x, 1, 0, 2, 3));
+            // [W, H, C, B]->[HW, C, B] -> [C, HW, B]
+
             x = norm.forward(ctx, x);
         }
         ggml_tensor_t *kv_x = kv.forward(ctx, x);
         kv_x = ggml_nn_reshape(ctx, kv_x, C/num_heads, num_heads, -1, B);
         kv_x = ggml_cont(ctx, ggml_permute(ctx, kv_x, 0, 2, 1, 3));
+        // [C/num_heads, num_heads, HW', B] -> [C/num_heads, HW', num_heads, B]
 
         int N2 = (int)kv_x->ne[1]; // dim 1
         ggml_tensor_t *k_x = ggml_nn_slice(ctx, kv_x, 1 /*dim*/, 0, N2, 2/*step*/);
         ggml_tensor_t *v_x = ggml_nn_slice(ctx, kv_x, 1 /*dim*/, 1, N2, 2/*step*/);
 
         ggml_tensor_t *attn = ggml_nn_mul_mat(ctx, q_x, ggml_transpose(ctx, k_x));
+        // [HW', HW, num_heads, B]
         attn = ggml_scale(ctx, attn, scale);
 
         // attn = attn.softmax(dim=-1)
         attn = ggml_soft_max(ctx, attn);
         // ---------------------------------------------------------------------------------
-
+        // torch: x = (attn @ v).transpose(1, 2).reshape(B, HW, C)
         x = ggml_nn_mul_mat(ctx, attn, v_x);
         x = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));
         x = ggml_reshape_3d(ctx, x, C, HW, B);
+        // [C/num_heads, HW, num_heads, B] -> [C/num_heads, num_heads, HW, B]->[C, HW, B]
 
         x = proj.forward(ctx, x);
         GGML_ASSERT(C == (int)x->ne[0] && HW == (int)x->ne[1] && B == x->ne[2]);
